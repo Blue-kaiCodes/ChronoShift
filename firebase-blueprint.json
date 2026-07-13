@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "user": {
+      "title": "User Profile",
+      "description": "User account settings and onboarding details",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "onboardingCompleted": { "type": "boolean" },
+        "avatarColor": { "type": "string" },
+        "bio": { "type": "string" },
+        "country": { "type": "string" },
+        "city": { "type": "string" },
+        "timezone": { "type": "string" },
+        "workStart": { "type": "integer" },
+        "workEnd": { "type": "integer" },
+        "lunchStart": { "type": "integer" },
+        "lunchEnd": { "type": "integer" },
+        "weekendDays": { "type": "array" },
+        "preferredMeetingLength": { "type": "integer" },
+        "calendarProvider": { "type": "string" },
+        "allowCalendarSync": { "type": "boolean" },
+        "allowEmailNotifications": { "type": "boolean" },
+        "allowTeamInvites": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "displayName", "onboardingCompleted"]
+    },
+    "workspace": {
+      "title": "Team Workspace",
+      "description": "Team workspace, membership structure, meetings, and coordinates",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "members": { "type": "array" },
+        "memberIds": { "type": "array" },
+        "pinnedCities": { "type": "array" },
+        "savedSchedules": { "type": "array" },
+        "meetingHistory": { "type": "array" },
+        "invitations": { "type": "array" }
+      },
+      "required": ["id", "name", "ownerId", "members", "memberIds"]
+    },
+    "notification": {
+      "title": "Notification",
+      "description": "User updates and invitation alerts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "read": { "type": "boolean" },
+        "inviteId": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "role": { "type": "string" },
+        "titleName": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "message", "read", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "Global user accounts"
+    },
+    "/workspaces/{workspaceId}": {
+      "schema": "workspace",
+      "description": "Workspaces mapped to users"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "notification",
+      "description": "Notification center items"
+    }
+  }
+}
