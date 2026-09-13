@@ -1,30 +1,9 @@
 import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sun, Moon, MapPin, Globe, Clock, Users, Eye, Sparkles } from "lucide-react";
+import { Sun, Moon, MapPin, Globe, Clock, Users, Eye } from "lucide-react";
 import { CITIES_DB } from "../lib/cities";
 import { getSolarTerminatorPath, getTimezoneOffset, getHourCategory } from "../lib/engine";
-
-// Clean vector paths for equirectangular continent outlines (1000x500 viewBox)
-const CONTINENT_PATHS = [
-  // North America
-  "M 150 70 L 220 60 L 280 80 L 310 120 L 260 170 L 240 230 L 200 240 L 170 210 L 140 160 L 110 120 Z",
-  // Greenland
-  "M 340 40 L 400 35 L 420 60 L 370 90 L 330 70 Z",
-  // South America
-  "M 260 250 L 330 280 L 360 330 L 320 420 L 270 450 L 250 360 L 240 290 Z",
-  // Europe
-  "M 470 90 L 530 80 L 570 110 L 530 150 L 460 140 L 460 110 Z",
-  // Africa
-  "M 460 160 L 560 160 L 580 230 L 550 320 L 490 350 L 440 250 L 440 180 Z",
-  // Asia
-  "M 560 80 L 750 60 L 850 110 L 820 200 L 710 210 L 660 170 L 580 150 Z",
-  // India subcontinent
-  "M 670 190 L 720 210 L 700 270 L 670 250 Z",
-  // Australia
-  "M 780 320 L 860 310 L 890 370 L 820 410 L 760 380 Z",
-  // Maritime SE Asia / Japan / UK islands
-  "M 440 90 L 455 85 L 450 110 Z M 840 120 L 860 130 L 850 160 Z M 760 250 L 790 260 L 780 280 Z M 800 260 L 840 280 L 820 300 Z"
-];
+import { WORLD_LAND_PATH } from "../lib/worldData";
 
 export default function WorldMap({
   members = [],
@@ -163,12 +142,15 @@ export default function WorldMap({
             <line x1="750" y1="0" x2="750" y2="500" />
           </g>
 
-          {/* Continents Outlines */}
-          <g fill="#1e293b" stroke="#334155" strokeWidth="1" opacity="0.7">
-            {CONTINENT_PATHS.map((d, i) => (
-              <path key={i} d={d} />
-            ))}
-          </g>
+          {/* Realistic High-Definition World Continents (Natural Earth 110m) */}
+          <path
+            d={WORLD_LAND_PATH}
+            fill="#1e293b"
+            stroke="#475569"
+            strokeWidth="0.65"
+            opacity="0.9"
+            className="transition-colors duration-200"
+          />
 
           {/* Real-time Solar Terminator (Night Shading) */}
           {showTerminator && (

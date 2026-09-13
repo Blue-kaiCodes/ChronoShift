@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { Globe, ArrowRight, Sparkles, Terminal } from "lucide-react";
+import { Globe, ArrowRight, Terminal } from "lucide-react";
 
 export default function AuthModal({ onAuthSuccess, onGuestLogin, onBackToLanding }) {
   const handleGoogleSignIn = () => {
@@ -83,7 +83,7 @@ export default function AuthModal({ onAuthSuccess, onGuestLogin, onBackToLanding
             onClick={handleGuestSignIn}
             className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-[0.98] cursor-pointer"
           >
-            <Sparkles className="w-4 h-4 text-amber-300" />
+            <Terminal className="w-4 h-4 text-indigo-200" />
             <span>Continue as Local Developer</span>
             <ArrowRight className="w-3 h-3 opacity-70" />
           </button>
