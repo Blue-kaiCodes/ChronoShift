@@ -1,0 +1,8 @@
+{
+  "firestore": {
+    "databaseId": "ai-studio-chronoshift-158aa815-1752-42c6-aee0-3be51c79e94b",
+    "rules": "firestore.rules",
+    "edition": "ENTERPRISE",
+    "dataAccessMode": "FIRESTORE_NATIVE"
+  }
+}

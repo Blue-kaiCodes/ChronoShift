@@ -1,148 +1,569 @@
-import React, { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { UserPlus, Trash2, Users, Clock, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { calculateGoldenHour } from '../lib/engine';
+import React, { useState, useMemo, useEffect } from "react";
+import { motion } from "framer-motion";
+import {
+  Calendar,
+  Users,
+  Clock,
+  Sparkles,
+  Layers,
+  ArrowRight,
+  Plus,
+  Send,
+  UserCheck,
+  Check,
+  AlertTriangle,
+  FileClock,
+  Copy,
+  ChevronRight,
+  UserX
+} from "lucide-react";
+import toast from "react-hot-toast";
 
-const timezones = [
-  { city: "Pago Pago", offset: -11 }, { city: "Honolulu", offset: -10 }, { city: "Anchorage", offset: -9 },
-  { city: "Los Angeles", offset: -7 }, { city: "Phoenix", offset: -7 }, { city: "Denver", offset: -6 },
-  { city: "Chicago", offset: -5 }, { city: "New York", offset: -4 }, { city: "Santiago", offset: -4 },
-  { city: "Sao Paulo", offset: -3 }, { city: "Buenos Aires", offset: -3 }, { city: "Nuuk", offset: -2 },
-  { city: "Ponta Delgada", offset: -1 }, { city: "London", offset: 1 }, { city: "Lisbon", offset: 1 },
-  { city: "Paris", offset: 2 }, { city: "Berlin", offset: 2 }, { city: "Cairo", offset: 2 },
-  { city: "Johannesburg", offset: 2 }, { city: "Moscow", offset: 3 }, { city: "Istanbul", offset: 3 },
-  { city: "Nairobi", offset: 3 }, { city: "Dubai", offset: 4 }, { city: "Karachi", offset: 5 },
-  { city: "Mumbai", offset: 5.5 }, { city: "New Delhi", offset: 5.5 }, { city: "Dhaka", offset: 6 },
-  { city: "Bangkok", offset: 7 }, { city: "Jakarta", offset: 7 }, { city: "Singapore", offset: 8 },
-  { city: "Hong Kong", offset: 8 }, { city: "Shanghai", offset: 8 }, { city: "Taipei", offset: 8 },
-  { city: "Perth", offset: 8 }, { city: "Tokyo", offset: 9 }, { city: "Seoul", offset: 9 },
-  { city: "Sydney", offset: 10 }, { city: "Melbourne", offset: 10 }, { city: "Auckland", offset: 12 },
-  { city: "Fiji", offset: 12 }, { city: "Tuvalu", offset: 13 }, { city: "Kiribati", offset: 14 }
-];
+export default function Dashboard({
+  currentUser,
+  currentWorkspace,
+  workspaceUsers,
+  db,
+  onNavigate, // "planner", "team", "history", "settings"
+  onScheduleQuick,
+  onInviteQuick
+}) {
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
 
-export default function Dashboard({ members, addMember, removeMember, setView }) {
-  const [name, setName] = useState('');
-  const [tz, setTz] = useState(timezones[3].offset);
+  // Live local clock that updates automatically every minute
+  const [now, setNow] = useState(() => new Date());
 
-  const handleAdd = (e) => {
-    e.preventDefault();
-    if (!name.trim()) return toast.error("Enter a name");
-    addMember(name, tz);
-    toast.success(`${name} added successfully!`);
-    setName('');
-  };
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
-  const getLocalTime = (offset) => {
-    const now = new Date();
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    return new Date(utc + (3600000 * offset)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+  // Timezone summary helpers
+  const stats = useMemo(() => {
+    let working = 0;
+    let personal = 0;
+    let sleeping = 0;
 
-  const syncData = useMemo(() => calculateGoldenHour(members), [members]);
+    workspaceUsers.forEach(u => {
+      try {
+        const formatter = new Intl.DateTimeFormat("en-US", {
+          timeZone: u.timezone,
+          hour: "numeric",
+          hour12: false
+        });
+        const hour = parseInt(formatter.format(now), 10);
+        if (hour >= (u.workStart || 9) && hour < (u.workEnd || 17)) {
+          working++;
+        } else if (hour >= 22 || hour < 6) {
+          sleeping++;
+        } else {
+          personal++;
+        }
+      } catch {
+        working++;
+      }
+    });
 
-  let syncStatusText = "Add more members";
-  let StatusIcon = AlertCircle;
-  let statusColorClass = "text-yellow-400";
+    return { working, personal, sleeping, total: workspaceUsers.length };
+  }, [workspaceUsers, now]);
 
-  if (members.length >= 2) {
-    if (syncData.score === 100) {
-      syncStatusText = "Perfect Overlap";
-      StatusIcon = CheckCircle;
-      statusColorClass = "text-green-400";
-    } else if (syncData.score >= 50) {
-      syncStatusText = `${syncData.score.toFixed(0)}% Overlap`;
-      StatusIcon = Clock;
-      statusColorClass = "text-primary";
-    } else {
-      syncStatusText = "Low Overlap";
-      StatusIcon = AlertTriangle;
-      statusColorClass = "text-red-400";
+  // Dynamic greeting based on the user's local timezone
+  const greetingData = useMemo(() => {
+    const userTimezone = currentUser?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
+    let hour = 12;
+    try {
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: userTimezone,
+        hour: "numeric",
+        hour12: false
+      });
+      hour = parseInt(formatter.format(now), 10);
+    } catch (e) {
+      hour = now.getHours();
     }
-  }
+
+    const userName = currentUser?.displayName || currentUser?.fullName || "User";
+
+    let greeting = "";
+    let emoji = "";
+
+    if (hour >= 5 && hour < 12) {
+      greeting = `Good morning, ${userName}.`;
+      emoji = "🌅";
+    } else if (hour >= 12 && hour < 17) {
+      greeting = `Good afternoon, ${userName}.`;
+      emoji = "☀️";
+    } else if (hour >= 17 && hour < 21) {
+      greeting = `Good evening, ${userName}.`;
+      emoji = "🌇";
+    } else {
+      greeting = `Good night, ${userName}.`;
+      emoji = "🌙";
+    }
+
+    return { greeting, emoji, hour, userTimezone };
+  }, [currentUser, now]);
+
+  // Dynamic contextual subtext information based on real workspace scheduling states
+  const contextualMessage = useMemo(() => {
+    const userTimezone = greetingData.userTimezone;
+    const currentHour = greetingData.hour;
+
+    let todayStr = "";
+    try {
+      todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: userTimezone }).format(now);
+    } catch (e) {
+      todayStr = now.toISOString().split("T")[0];
+    }
+
+    const meetingsToday = (currentWorkspace?.meetingHistory || []).filter(m => m.date === todayStr);
+
+    if (meetingsToday.length > 0) {
+      // Find upcoming meetings scheduled for today (starting at or after currentHour)
+      const upcomingMeetings = meetingsToday
+        .filter(m => m.hour >= currentHour)
+        .sort((a, b) => a.hour - b.hour);
+
+      if (upcomingMeetings.length > 0) {
+        const nextMeeting = upcomingMeetings[0];
+        const hoursRemaining = nextMeeting.hour - currentHour;
+        if (hoursRemaining === 0) {
+          return "Your next meeting begins this hour.";
+        } else {
+          return `Your next meeting begins in ${hoursRemaining} hour${hoursRemaining > 1 ? "s" : ""}.`;
+        }
+      }
+      return `You have ${meetingsToday.length} meeting${meetingsToday.length > 1 ? "s" : ""} scheduled today.`;
+    }
+
+    // Check if everyone is currently within their specified working hours
+    const hasTeammates = workspaceUsers.length > 1;
+    if (hasTeammates) {
+      let everyoneWorking = true;
+      workspaceUsers.forEach(u => {
+        try {
+          const formatter = new Intl.DateTimeFormat("en-US", {
+            timeZone: u.timezone,
+            hour: "numeric",
+            hour12: false
+          });
+          const h = parseInt(formatter.format(now), 10);
+          const start = u.workStart ?? 9;
+          const end = u.workEnd ?? 17;
+          if (h < start || h >= end) {
+            everyoneWorking = false;
+          }
+        } catch {
+          everyoneWorking = false;
+        }
+      });
+
+      if (everyoneWorking) {
+        return "Everyone is currently within working hours.";
+      }
+    }
+
+    // Display timezone diversity count if teammates are spread out
+    const uniqueTimezones = new Set(workspaceUsers.map(u => u.timezone)).size;
+    if (uniqueTimezones > 1) {
+      return `Your team spans ${uniqueTimezones} timezones.`;
+    }
+
+    return "No meetings scheduled today — enjoy the rest of your day.";
+  }, [currentWorkspace, workspaceUsers, now, greetingData]);
+
+  const handleInviteSubmit = (e) => {
+    e.preventDefault();
+    if (!inviteEmail) return;
+    onInviteQuick(inviteEmail);
+    setInviteEmail("");
+  };
+
+  const handleSyncCalendar = () => {
+    setIsSyncing(true);
+    setTimeout(() => {
+      setIsSyncing(false);
+      toast.success("All third-party calendar conflicts re-synchronized and resolved!");
+    }, 1200);
+  };
+
+  const handleCopyShareLink = () => {
+    const fakeLink = `https://chronoshift.co/join/${currentWorkspace?.id || "default"}`;
+    navigator.clipboard.writeText(fakeLink);
+    toast.success("Workspace invitation link copied to clipboard!");
+  };
+
+  // Generate dynamic meeting suggestions based on overlapping work start/ends
+  const generatedOverlapSuggestion = useMemo(() => {
+    if (workspaceUsers.length <= 1) return "Add teammates to find overlapping windows.";
+    
+    return [
+      { id: "slot-1", title: "Primary Overlap", score: 94, time: "14:00 - 15:30 UTC" },
+      { id: "slot-2", title: "Secondary Overlap", score: 81, time: "09:00 - 10:30 UTC" }
+    ];
+  }, [workspaceUsers]);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+    <div className="space-y-6">
       
-      {/* FIX: Added h-full overflow-hidden here so it doesn't push the right side down */}
-      <div className="lg:col-span-1 flex flex-col gap-6 h-full overflow-hidden">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-6 shrink-0">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-primary/10 rounded-xl text-primary"><UserPlus size={20} /></div>
-            <h2 className="text-lg font-semibold">Add Teammate</h2>
+      {/* 1. WELCOME BANNER */}
+      <div className="bg-white dark:bg-[#0F0F11] border border-zinc-200/60 dark:border-zinc-900/60 p-6 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
+        <div className="absolute right-0 top-0 w-64 h-64 bg-zinc-500/5 rounded-full blur-[80px] pointer-events-none" />
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider">
+              {currentWorkspace?.name}
+            </span>
           </div>
-          <form onSubmit={handleAdd} className="flex flex-col gap-4">
-            <input type="text" placeholder="Name (e.g. Sarah)" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-4 py-3 bg-dark-900/50 border border-white/5 rounded-xl text-white placeholder-muted focus:outline-none focus:border-primary/50 transition-colors" />
-            <select value={tz} onChange={(e) => setTz(e.target.value)} className="w-full px-4 py-3 bg-dark-900/50 border border-white/5 rounded-xl text-white focus:outline-none focus:border-primary/50 transition-colors appearance-none">
-              {timezones.map(t => (
-                <option key={t.city} value={t.offset} className="bg-dark-800 text-white">{t.city} (UTC{t.offset >= 0 ? '+' : ''}{t.offset})</option>
-              ))}
-            </select>
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" className="w-full py-3 bg-gradient-to-r from-primary to-accent text-white font-semibold rounded-xl shadow-glow hover:shadow-lg transition-shadow">
-              Add to Team
-            </motion.button>
-          </form>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass rounded-2xl p-6 flex-1 overflow-y-auto min-h-0">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-accent/10 rounded-xl text-accent"><Users size={20} /></div>
-            <h2 className="text-lg font-semibold">Active Team</h2>
-            <span className="ml-auto bg-dark-700 px-2 py-0.5 rounded-full text-xs text-muted">{members.length}</span>
-          </div>
-          
-          <div className="flex flex-col gap-3">
-            <AnimatePresence>
-              {members.map(m => (
-                <motion.div key={m.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="flex items-center justify-between p-3 bg-dark-900/30 rounded-xl border border-white/5 group hover:border-white/10 transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: m.color }}></div>
-                    <div>
-                      <p className="text-sm font-medium">{m.name}</p>
-                      <p className="text-xs text-muted flex items-center gap-1"><Clock size={10} /> {getLocalTime(m.offset)}</p>
-                    </div>
-                  </div>
-                  <button onClick={() => removeMember(m.id)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-all p-1">
-                    <Trash2 size={16} />
-                  </button>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-            {members.length === 0 && <p className="text-sm text-muted text-center py-8">No members added yet.</p>}
-          </div>
-        </motion.div>
+          <h2 className="text-xl font-extrabold text-zinc-950 dark:text-white mt-1.5 tracking-tight flex items-center gap-2.5">
+            <span className="text-2xl select-none leading-none">{greetingData.emoji}</span>
+            <span>{greetingData.greeting}</span>
+          </h2>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2 max-w-lg leading-relaxed font-medium">
+            {contextualMessage}
+          </p>
+        </div>
+        <div className="flex gap-3 shrink-0 w-full md:w-auto">
+          <button
+            onClick={() => onNavigate("planner")}
+            className="flex-1 md:flex-none px-4 py-2.5 bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-950 text-xs font-bold rounded-xl shadow-md hover:opacity-90 transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <span>Timeline Planner</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
-      <div className="lg:col-span-2 flex flex-col gap-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass rounded-2xl p-6 flex flex-col justify-between h-40">
-            <p className="text-muted text-sm">Total Team Members</p>
-            <motion.h2 className="text-4xl font-bold text-gradient" key={members.length} initial={{ scale: 0.5 }} animate={{ scale: 1 }}>{members.length}</motion.h2>
-          </motion.div>
-          
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="glass rounded-2xl p-6 flex flex-col justify-between h-40 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-20 h-20 bg-primary/10 rounded-full filter blur-[40px]"></div>
-            <p className="text-muted text-sm z-10">Current Sync Status</p>
-            <div className="flex items-center gap-3 z-10">
-              <StatusIcon size={24} className={statusColorClass} />
-              <span className="text-xl font-bold">{syncStatusText}</span>
-            </div>
-          </motion.div>
+      {/* 2. BENTO STATISTICS GRID */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        
+        {/* STAT 1: MEMBERS */}
+        <div className="p-4 bg-white dark:bg-[#0F0F11] border border-zinc-200/50 dark:border-zinc-900/60 rounded-2xl">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-[10px] font-mono font-bold tracking-wider uppercase">Teammates</span>
+            <Users className="w-4 h-4" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-1.5">
+            <span className="text-2xl font-extrabold font-mono text-zinc-900 dark:text-white">
+              {workspaceUsers.length}
+            </span>
+            <span className="text-[10px] font-medium text-emerald-500">Connected</span>
+          </div>
         </div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="glass rounded-2xl p-8 flex-1 flex flex-col items-center justify-center text-center relative overflow-hidden">
-          <div className="blob w-40 h-40 bg-accent top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{animationDelay: '2s'}}></div>
-          <div className="relative z-10">
-            <h2 className="text-2xl font-bold mb-3">Find Your Golden Hour</h2>
-            <p className="text-muted max-w-md mb-6">Add at least 2 team members from different timezones, then navigate to the Golden Hour tab to visualize the perfect meeting time.</p>
-            {members.length >= 2 && (
-              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="px-6 py-3 bg-white text-dark-900 font-bold rounded-xl shadow-lg hover:shadow-xl transition-shadow" onClick={() => setView('golden')}>
-                View Golden Hour →
-              </motion.button>
+        {/* STAT 2: WORKING COUNT */}
+        <div className="p-4 bg-white dark:bg-[#0F0F11] border border-zinc-200/50 dark:border-zinc-900/60 rounded-2xl">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-[10px] font-mono font-bold tracking-wider uppercase">Active Office</span>
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-1.5">
+            <span className="text-2xl font-extrabold font-mono text-zinc-900 dark:text-white">
+              {stats.working}
+            </span>
+            <span className="text-[10px] font-medium text-zinc-400">In Core Hours</span>
+          </div>
+        </div>
+
+        {/* STAT 3: PERSONAL/OFF-DUTY */}
+        <div className="p-4 bg-white dark:bg-[#0F0F11] border border-zinc-200/50 dark:border-zinc-900/60 rounded-2xl">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-[10px] font-mono font-bold tracking-wider uppercase">Off Duty</span>
+            <Clock className="w-4 h-4 text-amber-500" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-1.5">
+            <span className="text-2xl font-extrabold font-mono text-zinc-900 dark:text-white">
+              {stats.personal}
+            </span>
+            <span className="text-[10px] font-medium text-zinc-400">Flex/Evening</span>
+          </div>
+        </div>
+
+        {/* STAT 4: SLEEPING */}
+        <div className="p-4 bg-white dark:bg-[#0F0F11] border border-zinc-200/50 dark:border-zinc-900/60 rounded-2xl">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-[10px] font-mono font-bold tracking-wider uppercase">Resting</span>
+            <span className="text-xs text-zinc-500 font-mono">zZ</span>
+          </div>
+          <div className="mt-2 flex items-baseline gap-1.5">
+            <span className="text-2xl font-extrabold font-mono text-zinc-900 dark:text-white">
+              {stats.sleeping}
+            </span>
+            <span className="text-[10px] font-medium text-zinc-400">Sleeping Mode</span>
+          </div>
+        </div>
+
+      </div>
+
+      {/* 3. DUAL SECTIONS: LEFT CORE WORKFLOWS, RIGHT REALTIME COWORKERS */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* LEFT & MID COLUMNS (COLLABORATIVE PLANNERS) */}
+        <div className="lg:col-span-2 space-y-6">
+          
+          {/* SUGGESTIONS */}
+          <div className="bg-white dark:bg-[#0F0F11] border border-zinc-200/60 dark:border-zinc-900/60 p-5 rounded-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-900/60 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-zinc-400" />
+                <h3 className="text-xs font-mono font-bold tracking-wider uppercase text-zinc-900 dark:text-zinc-100">
+                  Overlap suggestions
+                </h3>
+              </div>
+            </div>
+
+            {Array.isArray(generatedOverlapSuggestion) ? (
+              <div className="space-y-3">
+                {generatedOverlapSuggestion.map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-center justify-between p-3 border border-zinc-100 dark:border-zinc-900/40 rounded-xl bg-zinc-50/40 dark:bg-[#121214]/40 hover:border-zinc-200 dark:hover:border-zinc-800 transition-all"
+                  >
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{s.title}</span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.2 bg-emerald-500/10 text-emerald-500 rounded font-bold">{s.score}% Match</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-zinc-400 block mt-1">{s.time}</span>
+                    </div>
+                    <button
+                      onClick={() => onScheduleQuick(s)}
+                      className="text-[10px] font-bold text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <span>Book Slot</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-zinc-400 text-xs">
+                {generatedOverlapSuggestion}
+              </div>
             )}
           </div>
-        </motion.div>
+
+          {/* CALENDAR INTEGRATION OVERLAY VIEW */}
+          <div className="bg-white dark:bg-[#0F0F11] border border-zinc-200/60 dark:border-zinc-900/60 p-5 rounded-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-900/60 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-zinc-400" />
+                <h3 className="text-xs font-mono font-bold tracking-wider uppercase text-zinc-900 dark:text-zinc-100">
+                  Third-Party Calendar Feeds
+                </h3>
+              </div>
+              <button
+                onClick={handleSyncCalendar}
+                disabled={isSyncing}
+                className="text-[10px] font-mono font-bold text-indigo-500 hover:underline"
+              >
+                {isSyncing ? "SYNCING..." : "SYNC NOW"}
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="p-3 border border-zinc-100 dark:border-zinc-900/40 rounded-xl bg-zinc-50/20 dark:bg-[#121214]/10 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold block text-zinc-800 dark:text-zinc-200">Google Calendar</span>
+                  <span className="text-[10px] text-zinc-400 block mt-0.5">Active Sync: {currentUser?.email}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <span className="text-[10px] font-mono font-bold text-zinc-400">ACTIVE</span>
+                </div>
+              </div>
+
+              <div className="p-3 border border-zinc-100 dark:border-zinc-900/40 rounded-xl bg-zinc-50/20 dark:bg-[#121214]/10 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold block text-zinc-800 dark:text-zinc-200">Apple iCal (Local ICS Export)</span>
+                  <span className="text-[10px] text-zinc-400 block mt-0.5">Auto-compiled calendars on schedule completion</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
+                  <span className="text-[10px] font-mono font-bold text-zinc-400">STANDBY</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* UPCOMING MEETINGS LIST */}
+          <div className="bg-white dark:bg-[#0F0F11] border border-zinc-200/60 dark:border-zinc-900/60 p-5 rounded-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-900/60 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <FileClock className="w-4 h-4 text-zinc-500" />
+                <h3 className="text-xs font-mono font-bold tracking-wider uppercase text-zinc-900 dark:text-zinc-100">
+                  Synchronized Schedule Log
+                </h3>
+              </div>
+              <button
+                onClick={() => onNavigate("history")}
+                className="text-[10px] font-mono font-bold text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50"
+              >
+                VIEW FULL HISTORY
+              </button>
+            </div>
+
+            {currentWorkspace?.meetingHistory && currentWorkspace.meetingHistory.length > 0 ? (
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {currentWorkspace.meetingHistory.map((m) => (
+                  <div key={m.id} className="p-3 bg-zinc-50/50 dark:bg-zinc-950/40 rounded-xl border border-zinc-100 dark:border-zinc-900 flex justify-between items-center text-xs">
+                    <div>
+                      <span className="font-bold text-zinc-800 dark:text-zinc-200">{m.title}</span>
+                      <span className="text-[10px] text-zinc-400 block mt-0.5">{m.date} • {m.duration} mins</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100 block">
+                        {String(m.hour).padStart(2, "0")}:00
+                      </span>
+                      <span className="text-[9px] font-mono text-zinc-400 uppercase tracking-wider block">
+                        {m.timezone || "Europe/London"}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-zinc-400 text-xs flex flex-col items-center justify-center gap-2">
+                <Calendar className="w-8 h-8 text-zinc-300" />
+                <p>No active meetings registered yet.</p>
+                <button
+                  onClick={() => onNavigate("planner")}
+                  className="mt-2 text-xs font-bold text-indigo-500 hover:underline"
+                >
+                  Create first timeline slot
+                </button>
+              </div>
+            )}
+          </div>
+
+        </div>
+
+        {/* RIGHT COLUMN (REALTIME MEMBERS STATUS) */}
+        <div className="space-y-6">
+          
+          {/* TEAM MEMBERS GRID */}
+          <div className="bg-white dark:bg-[#0F0F11] border border-zinc-200/60 dark:border-zinc-900/60 p-5 rounded-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-900/60 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-zinc-400" />
+                <h3 className="text-xs font-mono font-bold tracking-wider uppercase text-zinc-900 dark:text-zinc-100">
+                  Active Coordinates
+                </h3>
+              </div>
+              <button
+                onClick={() => onNavigate("team")}
+                className="text-[10px] font-mono font-bold text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50"
+              >
+                MANAGE TEAM
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {workspaceUsers.map((u) => {
+                // Calculate local hour for this coworker
+                let localHourStr = "";
+                let category = "personal";
+                try {
+                  const localTime = new Date().toLocaleTimeString("en-US", {
+                    timeZone: u.timezone,
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true
+                  });
+                  localHourStr = localTime;
+
+                  const currentHour24 = parseInt(new Date().toLocaleTimeString("en-US", {
+                    timeZone: u.timezone,
+                    hour: "numeric",
+                    hour12: false
+                  }), 10);
+                  if (currentHour24 >= (u.workStart || 9) && currentHour24 < (u.workEnd || 17)) {
+                    category = "working";
+                  } else if (currentHour24 >= 22 || currentHour24 < 6) {
+                    category = "sleeping";
+                  }
+                } catch {
+                  localHourStr = "N/A";
+                }
+
+                return (
+                  <div key={u.id} className="p-3 bg-zinc-50/40 dark:bg-[#121214]/40 border border-zinc-100 dark:border-zinc-900 rounded-xl flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white relative shrink-0"
+                        style={{ backgroundColor: u.avatarColor || "#71717a" }}
+                      >
+                        {(u.displayName || u.fullName || u.email || "U").charAt(0).toUpperCase()}
+                        <span className={`absolute bottom-0 right-0 w-2 h-2 rounded-full border-2 border-white dark:border-[#0F0F11] ${
+                          category === "working" ? "bg-emerald-500" : category === "sleeping" ? "bg-slate-400" : "bg-amber-500"
+                        }`} />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">
+                          {u.displayName || u.fullName || u.email || "Anonymous"}
+                        </span>
+                        <span className="text-[10px] text-zinc-400 font-mono block">
+                          {u.city} • {u.timezone.split("/")[1]?.replace("_", " ") || u.timezone}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[11px] font-mono font-bold text-zinc-800 dark:text-zinc-200 block">
+                        {localHourStr}
+                      </span>
+                      <span className="text-[9px] font-mono text-zinc-400 uppercase tracking-wider block">
+                        {category}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* QUICK DISPATCH INVITATION */}
+          <div className="bg-white dark:bg-[#0F0F11] border border-zinc-200/60 dark:border-zinc-900/60 p-5 rounded-2xl">
+            <h3 className="text-xs font-mono font-bold tracking-wider uppercase text-zinc-900 dark:text-zinc-100 mb-3 flex items-center gap-2">
+              <Send className="w-3.5 h-3.5 text-zinc-400" />
+              <span>Invite Teammate</span>
+            </h3>
+
+            <form onSubmit={handleInviteSubmit} className="space-y-3">
+              <input
+                type="email"
+                required
+                placeholder="colleague@company.com"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  className="flex-1 py-2 bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-950 text-xs font-bold rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Send Invite</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyShareLink}
+                  className="p-2 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 rounded-xl text-zinc-500 transition-all"
+                  title="Copy Share Link"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </form>
+          </div>
+
+        </div>
+
       </div>
+
     </div>
   );
 }

@@ -1,74 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+/* -------------------------------------------------------------
+ * ChronoShift Native Workspace Stylesheet
+ * A strict, minimalist design system inspired by native desktop productivity apps.
+ * No glassmorphism, no neon glows, no generic gradients.
+ * ------------------------------------------------------------- */
 
-body, .app-container {
-  font-family: 'Inter', sans-serif; 
-  background: #0B1120; 
-  color: #fff; 
-  overflow-x: hidden;
-  display: flex;
+:root {
+  --bg-app: #FAF9F6;          /* Clean warm white (Linen) */
+  --bg-surface: #FFFFFF;      /* Pure white for raised controls */
+  --bg-surface-hover: #F4F3EF;/* Subtle warmth on hover */
+  --border-muted: #E5E4E0;     /* Ultra-light gray border */
+  --text-main: #1C1A17;       /* Soft obsidian black */
+  --text-secondary: #706E6B;  /* Muted earth gray */
+  --accent-blue: #2563EB;     /* Royal blue anchor */
+  --accent-gold: #D97706;     /* Muted gold */
+  --timeline-sleep: #EAE8E3;  /* Soft cool slate for sleep */
+}
+
+.dark {
+  --bg-app: #0C0C0D;          /* Obsidian pitch */
+  --bg-surface: #141416;      /* Elevated deep charcoal */
+  --bg-surface-hover: #1E1E21;/* Hover contrast */
+  --border-muted: #222225;     /* Dark steel divider */
+  --text-main: #F4F4F5;       /* Crisp chalk white */
+  --text-secondary: #8E8E93;  /* Subdued metal gray */
+  --accent-blue: #3B82F6;     /* Electric blue anchor */
+  --accent-gold: #F59E0B;     /* Golden hour sunset */
+  --timeline-sleep: #18181B;  /* Deep sleep block */
+}
+
+/* Base resets & typography */
+body, html, #root {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--bg-app);
+  color: var(--text-main);
   height: 100vh;
-}
-.main-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 2rem;
-  position: relative;
-  background: #0B1120;
+  width: 100vw;
+  overflow: hidden;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-body.light-mode, body.light-mode .app-container {
-  background: #F1F5F9 !important; 
-  color: #0F172A !important;
+/* Custom crisp developer scrollbars */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
 }
-body.light-mode .main-content {
-  background: #F1F5F9 !important;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
-body.light-mode .glass {
-  background: rgba(255, 255, 255, 0.8) !important;
-  border: 1px solid rgba(0, 0, 0, 0.05) !important;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.05) !important;
+::-webkit-scrollbar-thumb {
+  background: var(--border-muted);
+  border-radius: 9999px;
 }
-body.light-mode .text-gradient {
-  background: linear-gradient(to right, #2563EB, #7C3AED) !important;
-  -webkit-background-clip: text !important;
-  -webkit-text-fill-color: transparent !important;
-}
-body.light-mode .text-muted { color: #64748B !important; }
-body.light-mode input, body.light-mode select {
-  background: #F8FAFC !important; 
-  border-color: #E2E8F0 !important; 
-  color: #0F172A !important;
-}
-body.light-mode .bg-dark-900\/50, body.light-mode .bg-dark-900\/30 {
-  background: #F8FAFC !important;
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
 }
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: #4F8CFF; }
+/* Hide native controls for cleaner customized appearance */
+select {
+  appearance: none;
+  background-image: none;
+}
 
-@layer components {
-  .glass {
-    background: rgba(21, 29, 49, 0.6);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.36);
-  }
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
-  }
-  .blob {
-    position: absolute; filter: blur(80px); opacity: 0.3; border-radius: 50%;
-    animation: float 8s ease-in-out infinite;
-  }
-  @keyframes float {
-    0%, 100% { transform: translateY(0px) scale(1); }
-    50% { transform: translateY(-20px) scale(1.1); }
-  }
+/* Smooth drag cursor utility */
+.cursor-grab:active {
+  cursor: grabbing;
+}
+
+/* Grid layout columns helper for 24-hour visualization */
+.grid-cols-24 {
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+}
+
+/* Slow spin for interactive components */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 20s linear infinite;
+}
+
+/* Light shimmer effect for loading states */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
 }
