@@ -18,11 +18,18 @@ import {
   Briefcase,
   CalendarDays,
   Sparkles,
-  Info
+  Info,
+  Share2,
+  Map,
+  LayoutList
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { calculateTimelineData, getTimezoneOffset } from "../lib/engine";
+import { calculateTimelineData, getTimezoneOffset, getTopGoldenHours } from "../lib/engine";
 import { getGoogleCalendarUrl, getOutlookCalendarUrl, downloadIcsFile } from "../lib/calendar";
+import { getPublicHoliday, isWeekend } from "../lib/holidays";
+import { CITIES_DB } from "../lib/cities";
+import WorldMap from "./WorldMap";
+import ShareModal from "./ShareModal";
 
 export default function TimelinePlanner({
   members,
@@ -42,6 +49,8 @@ export default function TimelinePlanner({
   const [editingMemberId, setEditingMemberId] = useState(null); // Row ID of member whose shift we are currently editing inline
   const [isDragging, setIsDragging] = useState(false);
   const [hoveredHour, setHoveredHour] = useState(null);
+  const [viewMode, setViewMode] = useState("timeline"); // "timeline" | "map"
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   const gridContainerRef = useRef(null);
 
@@ -49,6 +58,11 @@ export default function TimelinePlanner({
   const timelineResult = useMemo(() => {
     return calculateTimelineData(members, currentDate, referenceTimezone);
   }, [members, currentDate, referenceTimezone]);
+
+  const topGoldenHours = useMemo(() => {
+    if (!timelineResult) return [];
+    return getTopGoldenHours(timelineResult.hourlyData, 3);
+  }, [timelineResult]);
 
   const isEmpty = members.length === 0;
 
@@ -323,24 +337,67 @@ export default function TimelinePlanner({
                 </select>
               </div>
 
-              {/* Align Best Overlap Button */}
-              <button
-                onClick={() => {
-                  if (timelineResult?.bestHour !== undefined) {
-                    setActiveHour(timelineResult.bestHour);
-                    toast.success(`Aligned reference hour to ${formatHourLabel(timelineResult.bestHour)}`);
-                  }
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 text-[11px] font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/50 dark:hover:bg-zinc-900/30 transition-all cursor-pointer bg-white dark:bg-[#121214]"
-              >
-                <span>Best Overlap ({formatHourLabel(timelineResult?.bestHour || 0)})</span>
-              </button>
+              {/* Top Golden Hours Multi-Picker */}
+              {topGoldenHours.length > 0 && (
+                <div className="hidden md:flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] font-mono">
+                  <Sparkles className="w-3 h-3 text-amber-500" />
+                  <span className="font-bold text-amber-600 dark:text-amber-400 mr-1">Golden:</span>
+                  {topGoldenHours.map((gh, idx) => (
+                    <button
+                      key={gh.hour}
+                      onClick={() => {
+                        setActiveHour(gh.hour);
+                        toast.success(`Snapped to ${formatHourLabel(gh.hour)} (${gh.score.toFixed(0)}% overlap)`);
+                      }}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                        activeHour === gh.hour
+                          ? "bg-amber-500 text-white shadow-sm"
+                          : "hover:bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                      }`}
+                      title={`Rank #${idx + 1}: ${formatHourLabel(gh.hour)} with ${gh.score.toFixed(0)}% team availability`}
+                    >
+                      {idx === 0 ? "🥇" : idx === 1 ? "🥈" : "🥉"} {formatHourLabel(gh.hour)}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* View Mode Toggle: Timeline vs World Map */}
+              <div className="flex items-center bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-zinc-200/50 dark:border-zinc-800">
+                <button
+                  onClick={() => setViewMode("timeline")}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    viewMode === "timeline"
+                      ? "bg-white dark:bg-zinc-800 text-zinc-950 dark:text-white shadow-sm"
+                      : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                  }`}
+                >
+                  <LayoutList className="w-3 h-3" />
+                  <span>Timeline</span>
+                </button>
+                <button
+                  onClick={() => setViewMode("map")}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    viewMode === "map"
+                      ? "bg-white dark:bg-zinc-800 text-zinc-950 dark:text-white shadow-sm"
+                      : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                  }`}
+                >
+                  <Map className="w-3 h-3" />
+                  <span>World Map</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* 
-            THE MAIN HIGH-FIDELITY INTERACTIVE TIMELINE STAGE 
-          */}
+          {viewMode === "map" ? (
+            <WorldMap
+              members={members}
+              currentDate={currentDate}
+              activeHour={activeHour}
+              referenceTimezone={referenceTimezone}
+            />
+          ) : (
           <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/60 rounded-2xl overflow-hidden relative">
             
             {/* Timeline Header Row: Hour Indicators */}
@@ -409,6 +466,11 @@ export default function TimelinePlanner({
 
                 // Find the local string matching the selected hour
                 const localData = localizedTimes.find(t => t.id === member.id);
+                // Check public holiday / weekend
+                const cityMatch = CITIES_DB.find(c => c.name.toLowerCase() === (member.city || "").toLowerCase());
+                const memberCountry = member.country || cityMatch?.country;
+                const holiday = getPublicHoliday(memberCountry, currentDate);
+                const weekend = isWeekend(currentDate);
 
                 return (
                   <div key={member.id} className="flex flex-col gap-2 relative z-20">
@@ -423,9 +485,20 @@ export default function TimelinePlanner({
                           </span>
                         </div>
                         <div className="flex items-center justify-between mt-1">
-                          <span className="text-[10px] text-zinc-400 font-mono truncate max-w-[110px]">
-                            {member.city}
-                          </span>
+                          <div className="flex items-center gap-1 min-w-0">
+                            <span className="text-[10px] text-zinc-400 font-mono truncate max-w-[70px]">
+                              {member.city}
+                            </span>
+                            {holiday ? (
+                              <span className="text-[8px] font-mono px-1 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20 truncate" title={`Public Holiday: ${holiday.name}`}>
+                                🏖️ {holiday.name}
+                              </span>
+                            ) : weekend ? (
+                              <span className="text-[8px] font-mono px-1 py-0.5 rounded bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                                🌙 Wknd
+                              </span>
+                            ) : null}
+                          </div>
                           <span className="text-[10px] text-zinc-400 font-mono font-bold">
                             {localData ? localData.localWeekday : ""}
                           </span>
@@ -560,6 +633,7 @@ export default function TimelinePlanner({
             </div>
 
           </div>
+          )}
 
           {/* 
             DYNAMIC BOTTOM MEETING HUD DECK
@@ -700,6 +774,14 @@ export default function TimelinePlanner({
                 </a>
 
                 <button
+                  onClick={() => setIsShareModalOpen(true)}
+                  className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Developer Share Hub</span>
+                </button>
+
+                <button
                   onClick={handleDownloadIcs}
                   className="px-3.5 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-xs font-bold transition-all flex items-center gap-1.5 border border-zinc-200/40 dark:border-zinc-800 cursor-pointer"
                 >
@@ -711,6 +793,17 @@ export default function TimelinePlanner({
             </div>
 
           </div>
+
+          {/* DEVELOPER SHARE HUB MODAL */}
+          <ShareModal
+            isOpen={isShareModalOpen}
+            onClose={() => setIsShareModalOpen(false)}
+            meetingTimeUTC={proposedMeetingTimeUTC}
+            duration={duration}
+            referenceTimezone={referenceTimezone}
+            localizedTimes={localizedTimes}
+            score={activeSlotData?.score || 0}
+          />
 
         </div>
       )}

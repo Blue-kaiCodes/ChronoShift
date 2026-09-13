@@ -152,3 +152,61 @@ export function calculateTimelineData(members, date = new Date(), referenceTimez
     referenceOffset: refOffset
   };
 }
+
+/**
+ * Returns top N hours ranked by overlap score.
+ * @param {Array} hourlyData 
+ * @param {number} count 
+ * @returns {Array}
+ */
+export function getTopGoldenHours(hourlyData, count = 3) {
+  if (!hourlyData || hourlyData.length === 0) return [];
+  const sorted = [...hourlyData].sort((a, b) => b.score - a.score);
+  return sorted.slice(0, count);
+}
+
+/**
+ * Calculates equirectangular SVG path data for the night terminator shadow.
+ * @param {Date} date - Target date
+ * @param {number} utcHour - Hour in UTC (0 - 24)
+ * @param {number} width - Map viewBox width (default 1000)
+ * @param {number} height - Map viewBox height (default 500)
+ * @returns {string} SVG path string
+ */
+export function getSolarTerminatorPath(date = new Date(), utcHour = 12, width = 1000, height = 500) {
+  const startOfYear = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const dayOfYear = Math.floor((date.getTime() - startOfYear.getTime()) / 86400000) + 1;
+  
+  // Approximate solar declination in radians
+  const declinationDeg = -23.44 * Math.cos(((2 * Math.PI) / 365) * (dayOfYear + 10));
+  const declinationRad = (declinationDeg * Math.PI) / 180;
+  
+  // Sun longitude in degrees (at 12 UTC, sun is at approx 0 deg)
+  const sunLng = (12 - utcHour) * 15;
+  
+  const points = [];
+  const step = 4; // Longitude step in degrees
+  for (let lng = -180; lng <= 180; lng += step) {
+    const diffLngRad = ((lng - sunLng) * Math.PI) / 180;
+    const tanLat = -Math.cos(diffLngRad) / Math.tan(declinationRad || 0.0001);
+    const latRad = Math.atan(tanLat);
+    const latDeg = (latRad * 180) / Math.PI;
+
+    // Convert (lng, lat) to SVG coordinates
+    const x = ((lng + 180) / 360) * width;
+    const y = ((90 - latDeg) / 180) * height;
+    points.push({ x, y });
+  }
+
+  // Close the night polygon towards the darker pole
+  const isNorthWinter = declinationDeg < 0;
+  const poleY = isNorthWinter ? 0 : height;
+  
+  let path = `M 0 ${points[0].y.toFixed(1)}`;
+  points.forEach(p => {
+    path += ` L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+  });
+  path += ` L ${width} ${poleY} L 0 ${poleY} Z`;
+  return path;
+}
+

@@ -37,6 +37,7 @@ import TeamView from "./components/TeamView";
 import HistoryView from "./components/HistoryView";
 import SettingsView from "./components/SettingsView";
 import CommandPalette from "./components/CommandPalette";
+import ShortcutsModal from "./components/ShortcutsModal";
 import { calculateTimelineData } from "./lib/engine";
 import toast from "react-hot-toast";
 
@@ -83,6 +84,7 @@ export default function App() {
 
   // Interactive controls
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
   const [isNotifDropdownOpen, setIsNotifDropdownOpen] = useState(false);
   const [showWorkspaceCreateModal, setShowWorkspaceCreateModal] = useState(false);
@@ -141,14 +143,56 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handleOuterClick);
   }, []);
 
-  // Keyboard Shortcuts (Cmd+K)
+  // Global Power-User Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Don't intercept when user is typing in form inputs
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable) {
+        return;
+      }
+
+      // Command Palette (Cmd+K / Ctrl+K)
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setIsPaletteOpen(prev => !prev);
+        return;
       }
-      // Quick switcher tabs via Option + Number
+
+      // Shortcuts Guide (?)
+      if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+        e.preventDefault();
+        setIsShortcutsOpen(prev => !prev);
+        return;
+      }
+
+      // Snap to optimal golden hour (G)
+      if (e.key === "g" || e.key === "G") {
+        e.preventDefault();
+        alignOptimal();
+        return;
+      }
+
+      // Reset to today (T)
+      if (e.key === "t" || e.key === "T") {
+        e.preventDefault();
+        resetToToday();
+        toast.success("Reset calendar view to today");
+        return;
+      }
+
+      // Step calendar date back/forward (Left/Right Arrows)
+      if (e.key === "ArrowLeft" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        adjustDate(-1);
+        return;
+      }
+      if (e.key === "ArrowRight" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        adjustDate(1);
+        return;
+      }
+
+      // Quick switcher tabs via Alt + Number (1-5)
       if (e.altKey && !isNaN(e.key)) {
         const viewMap = ["dashboard", "planner", "team", "history", "settings"];
         const target = viewMap[parseInt(e.key) - 1];
@@ -160,7 +204,7 @@ export default function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [workspaceUsers, currentDate, referenceTimezone]);
 
   // Workspace lists of current authenticated user
   const myWorkspaces = useMemo(() => {
@@ -544,6 +588,15 @@ export default function App() {
                 {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
               </button>
 
+              {/* Keyboard Shortcuts Guide */}
+              <button
+                onClick={() => setIsShortcutsOpen(true)}
+                title="Keyboard shortcuts (?)"
+                className="p-2 rounded-lg bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50 border border-zinc-200/30 dark:border-zinc-800 cursor-pointer hidden sm:flex items-center justify-center"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+              </button>
+
               {/* User Avatar Action */}
               <div 
                 onClick={() => setActiveView("settings")}
@@ -752,6 +805,26 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* RAYCAST COMMAND PALETTE (CMD+K) */}
+      <CommandPalette
+        isOpen={isPaletteOpen}
+        onClose={() => setIsPaletteOpen(false)}
+        addMember={(name, city) => handlePlannerAddMember(name, city)}
+        isDark={isDark}
+        setIsDark={setIsDark}
+        clearTeam={() => {
+          toast.success("Timeline reset");
+        }}
+        alignOptimal={alignOptimal}
+        resetToToday={resetToToday}
+      />
+
+      {/* KEYBOARD SHORTCUTS HUD (?) */}
+      <ShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
+      />
 
       {/* Real-time styled minimalist toast notifications */}
       <Toaster
