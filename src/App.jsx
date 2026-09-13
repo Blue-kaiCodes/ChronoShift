@@ -62,7 +62,10 @@ export default function App() {
     logMeeting,
     markNotificationRead,
     clearAllNotifications,
-    togglePinCity
+    togglePinCity,
+    loginAsGuest,
+    addTeammate,
+    updateMemberHours
   } = store;
 
   // Session Routing
@@ -270,53 +273,16 @@ export default function App() {
     setShowWorkspaceCreateModal(false);
   };
 
-  const handlePlannerAddMember = async (name, city) => {
-    if (!currentWorkspace) return;
-    const randomColors = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4"];
-    const newUid = `user-${Date.now()}`;
-    const newUser = {
-      id: newUid,
-      uid: newUid,
-      email: `${name.toLowerCase().replace(/\s+/g, "")}@chronoshift.co`,
-      fullName: name,
-      username: name.toLowerCase().replace(/\s+/g, "_"),
-      avatarColor: randomColors[Math.floor(Math.random() * randomColors.length)],
-      bio: `Workspace contributor based in ${city.name}`,
-      country: city.country,
-      city: city.name,
-      timezone: city.timezone,
-      workStart: 9,
-      workEnd: 17,
-      onboardingCompleted: true,
-      createdAt: new Date().toISOString()
-    };
-
-    try {
-      await setDoc(doc(dbInstance, "users", newUid), newUser);
-      const updatedMembers = [...(currentWorkspace.members || []), { userId: newUid, role: "Contributor", title: "Global Partner" }];
-      const updatedMemberIds = [...(currentWorkspace.memberIds || []), newUid];
-      const wsDocRef = doc(dbInstance, "workspaces", currentWorkspace.id);
-      await setDoc(wsDocRef, { members: updatedMembers, memberIds: updatedMemberIds }, { merge: true });
-      toast.success(`${name} linked to current workspace team!`);
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to add partner to workspace.");
-    }
+  const handlePlannerAddMember = (name, city) => {
+    addTeammate(name, city);
   };
 
   const handlePlannerRemoveMember = (memberId) => {
     removeMember(memberId);
   };
 
-  const handlePlannerUpdateHours = async (memberId, start, end) => {
-    try {
-      const userDocRef = doc(dbInstance, "users", memberId);
-      await setDoc(userDocRef, { workStart: start, workEnd: end }, { merge: true });
-      toast.success("Member working hour offsets updated!");
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to update working hours.");
-    }
+  const handlePlannerUpdateHours = (memberId, start, end) => {
+    updateMemberHours(memberId, start, end);
   };
 
   // Log meeting directly inside workspace timeline history
@@ -354,6 +320,10 @@ export default function App() {
           initialView={authMode}
           onBackToLanding={() => setActiveView("landing")}
           onAuthSuccess={handleAuthSuccess}
+          onGuestLogin={() => {
+            loginAsGuest();
+            setActiveView("dashboard");
+          }}
         />
       )}
 

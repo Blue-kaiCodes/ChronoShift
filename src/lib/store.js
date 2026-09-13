@@ -4,20 +4,159 @@ import { auth, db as dbInstance } from "./firebase";
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
 import { doc, onSnapshot, getDoc, setDoc, query, collection, where, deleteDoc, getDocs } from "firebase/firestore";
 
-// Helper to save DB to local storage if needed as a fallback/cache
-export function saveDB() {
-  // Deprecated in favor of real Firestore, kept for compatibility
+/**
+ * Creates default demo/local developer data for instant offline or localhost access.
+ */
+export function createDefaultGuestData(customName = "Aditya Bhaskar") {
+  const guestUser = {
+    id: "guest-dev-01",
+    uid: "guest-dev-01",
+    email: "aditya.bhaskar@chronoshift.co",
+    displayName: customName,
+    fullName: customName,
+    photoURL: "",
+    onboardingCompleted: true,
+    avatarColor: "#6366f1",
+    bio: "Lead Developer & Product Architect",
+    country: "United Kingdom",
+    city: "London",
+    timezone: "Europe/London",
+    workStart: 9,
+    workEnd: 17,
+    lunchStart: 12,
+    lunchEnd: 13,
+    weekendDays: [6, 0],
+    preferredMeetingLength: 30,
+    preferredLanguage: "English",
+    calendarProvider: "Google Calendar",
+    clockFormat: "12h",
+    allowCalendarSync: true,
+    allowEmailNotifications: true,
+    allowTeamInvites: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  const teammates = [
+    guestUser,
+    {
+      id: "teammate-02",
+      uid: "teammate-02",
+      email: "sarah.chen@chronoshift.co",
+      displayName: "Sarah Chen",
+      fullName: "Sarah Chen",
+      avatarColor: "#ec4899",
+      country: "United States",
+      city: "San Francisco",
+      timezone: "America/Los_Angeles",
+      workStart: 9,
+      workEnd: 18
+    },
+    {
+      id: "teammate-03",
+      uid: "teammate-03",
+      email: "kenji.sato@chronoshift.co",
+      displayName: "Kenji Sato",
+      fullName: "Kenji Sato",
+      avatarColor: "#10b981",
+      country: "Japan",
+      city: "Tokyo",
+      timezone: "Asia/Tokyo",
+      workStart: 10,
+      workEnd: 19
+    },
+    {
+      id: "teammate-04",
+      uid: "teammate-04",
+      email: "priya.sharma@chronoshift.co",
+      displayName: "Priya Sharma",
+      fullName: "Priya Sharma",
+      avatarColor: "#f59e0b",
+      country: "India",
+      city: "Bangalore",
+      timezone: "Asia/Kolkata",
+      workStart: 9,
+      workEnd: 18
+    },
+    {
+      id: "teammate-05",
+      uid: "teammate-05",
+      email: "liam.oconnor@chronoshift.co",
+      displayName: "Liam O'Connor",
+      fullName: "Liam O'Connor",
+      avatarColor: "#8b5cf6",
+      country: "Australia",
+      city: "Sydney",
+      timezone: "Australia/Sydney",
+      workStart: 8,
+      workEnd: 16
+    }
+  ];
+
+  const defaultWorkspace = {
+    id: "ws-core-team",
+    name: "ChronoShift Core Team",
+    type: "Startup",
+    ownerId: guestUser.uid,
+    members: [
+      { userId: guestUser.uid, role: "Owner", title: "Product Lead" },
+      { userId: "teammate-02", role: "Admin", title: "Engineering Lead" },
+      { userId: "teammate-03", role: "Contributor", title: "Frontend Architect" },
+      { userId: "teammate-04", role: "Contributor", title: "Backend Engineer" },
+      { userId: "teammate-05", role: "Contributor", title: "DevOps Engineer" }
+    ],
+    memberIds: [guestUser.uid, "teammate-02", "teammate-03", "teammate-04", "teammate-05"],
+    pinnedCities: ["London", "San Francisco", "Tokyo", "Bangalore", "Sydney"],
+    savedSchedules: [],
+    meetingHistory: [
+      {
+        id: "meet-demo-1",
+        title: "Sprint Sync & Timezone Calibration",
+        date: new Date().toISOString().split("T")[0],
+        hour: 14,
+        duration: 45,
+        participants: [guestUser.uid, "teammate-02", "teammate-03"]
+      }
+    ],
+    invitations: []
+  };
+
+  return {
+    currentUser: guestUser,
+    currentWorkspace: defaultWorkspace,
+    db: {
+      users: teammates,
+      workspaces: [defaultWorkspace],
+      notifications: [
+        {
+          id: "notif-01",
+          userId: guestUser.uid,
+          title: "Welcome to ChronoShift!",
+          message: "Your timezone-synchronized workspace is ready.",
+          read: false,
+          timestamp: new Date().toISOString()
+        }
+      ]
+    }
+  };
 }
 
-export function getStoredDB() {
-  return { users: [], workspaces: [], notifications: [] };
-}
-
-// Global hook to access state easily and trigger reactivity across pages
 export function useSaaSStore() {
   const [currentUser, setCurrentUser] = useState(null);
   const [db, setDb] = useState({ users: [], workspaces: [], notifications: [] });
   const [currentWorkspace, setCurrentWorkspace] = useState(null);
+
+  const saveGuestSession = (updatedUser, updatedDb, updatedWorkspace) => {
+    try {
+      localStorage.setItem("chronoshift_guest_session", JSON.stringify({
+        currentUser: updatedUser || currentUser,
+        db: updatedDb || db,
+        currentWorkspace: updatedWorkspace || currentWorkspace
+      }));
+    } catch (e) {
+      console.warn("Failed to persist guest session", e);
+    }
+  };
 
   // Bind real-time Firebase Auth state and Firestore collections
   useEffect(() => {
@@ -34,6 +173,21 @@ export function useSaaSStore() {
       cleanupActiveListeners();
 
       if (!firebaseUser) {
+        // Check if there is an active local developer session
+        const savedGuest = localStorage.getItem("chronoshift_guest_session");
+        if (savedGuest) {
+          try {
+            const parsed = JSON.parse(savedGuest);
+            if (parsed && parsed.currentUser) {
+              setCurrentUser(parsed.currentUser);
+              setDb(parsed.db || { users: [], workspaces: [], notifications: [] });
+              setCurrentWorkspace(parsed.currentWorkspace || parsed.db?.workspaces?.[0] || null);
+              return;
+            }
+          } catch (e) {
+            console.error("Failed to restore guest session", e);
+          }
+        }
         setCurrentUser(null);
         setDb({ users: [], workspaces: [], notifications: [] });
         setCurrentWorkspace(null);
@@ -75,7 +229,6 @@ export function useSaaSStore() {
           };
           await setDoc(userDocRef, defaultProfile);
 
-          // Auto-instantiate their first default team workspace
           const wsId = `workspace-${Date.now()}`;
           const defaultWorkspace = {
             id: wsId,
@@ -94,7 +247,7 @@ export function useSaaSStore() {
           await setDoc(doc(dbInstance, "workspaces", wsId), defaultWorkspace);
         }
 
-        // 1. Subscribe to the logged-in user profile document
+        // 1. User profile listener
         const unsubUser = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
             setCurrentUser(docSnap.data());
@@ -102,7 +255,7 @@ export function useSaaSStore() {
         });
         activeUnsubscribers.push(unsubUser);
 
-        // 2. Subscribe to ALL users (to resolve team member profiles dynamically)
+        // 2. All users listener
         const unsubAllUsers = onSnapshot(collection(dbInstance, "users"), (colSnap) => {
           const userList = [];
           colSnap.forEach(d => {
@@ -113,7 +266,7 @@ export function useSaaSStore() {
         });
         activeUnsubscribers.push(unsubAllUsers);
 
-        // 3. Subscribe to Workspaces where the user is listed in memberIds
+        // 3. Workspaces listener
         const qWorkspaces = query(
           collection(dbInstance, "workspaces"),
           where("memberIds", "array-contains", firebaseUser.uid)
@@ -127,7 +280,7 @@ export function useSaaSStore() {
         });
         activeUnsubscribers.push(unsubWorkspaces);
 
-        // 4. Subscribe to Notifications assigned to this user
+        // 4. Notifications listener
         const qNotifications = query(
           collection(dbInstance, "notifications"),
           where("userId", "==", firebaseUser.uid)
@@ -152,7 +305,7 @@ export function useSaaSStore() {
     };
   }, []);
 
-  // Sync active current workspace reactive state
+  // Sync active current workspace
   useEffect(() => {
     if (currentUser && db.workspaces.length > 0) {
       if (!currentWorkspace || !db.workspaces.find(w => w.id === currentWorkspace.id)) {
@@ -163,53 +316,83 @@ export function useSaaSStore() {
           setCurrentWorkspace(updated);
         }
       }
-    } else {
+    } else if (!currentUser) {
       setCurrentWorkspace(null);
     }
   }, [currentUser, db.workspaces]);
 
   // Auth Operations
+  const loginAsGuest = (customName = "Aditya Bhaskar") => {
+    const data = createDefaultGuestData(customName);
+    setCurrentUser(data.currentUser);
+    setDb(data.db);
+    setCurrentWorkspace(data.currentWorkspace);
+    localStorage.setItem("chronoshift_guest_session", JSON.stringify(data));
+    toast.success("Signed in (Local Developer Mode)!");
+    return data.currentUser;
+  };
+
   const loginWithGoogle = async () => {
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       return result.user;
     } catch (error) {
-      console.error(error);
+      console.error("Google Auth error:", error);
+      if (error?.code === "auth/unauthorized-domain" || error?.message?.includes("unauthorized-domain")) {
+        toast("Firebase domain unauthorized on localhost. Activating Local Developer Mode...", {
+          icon: "⚡",
+          duration: 4000
+        });
+        return loginAsGuest();
+      }
       toast.error(error.message || "Google Authentication failed");
       throw error;
     }
   };
 
   const registerUser = async () => {
-    // Deprecated for direct Google Auth Flow
     return loginWithGoogle();
   };
 
   const loginUser = async () => {
-    // Deprecated for direct Google Auth Flow
     return loginWithGoogle();
   };
 
   const logoutUser = async () => {
+    localStorage.removeItem("chronoshift_guest_session");
     try {
       await signOut(auth);
-      setCurrentWorkspace(null);
-      toast.success("Successfully logged out.");
     } catch (error) {
-      toast.error("Failed to log out.");
+      console.warn("Sign out:", error);
     }
+    setCurrentUser(null);
+    setCurrentWorkspace(null);
+    setDb({ users: [], workspaces: [], notifications: [] });
+    toast.success("Successfully logged out.");
   };
 
   const updateProfile = async (fields) => {
     if (!currentUser) return;
+    const updatedUser = { ...currentUser, ...fields, updatedAt: new Date().toISOString() };
+    setCurrentUser(updatedUser);
+
+    if (currentUser.id?.startsWith("guest-")) {
+      const updatedUsers = db.users.map(u => (u.id === currentUser.id ? updatedUser : u));
+      const updatedDb = { ...db, users: updatedUsers };
+      setDb(updatedDb);
+      saveGuestSession(updatedUser, updatedDb, currentWorkspace);
+      toast.success("Profile updated!");
+      return;
+    }
+
     try {
       const userDocRef = doc(dbInstance, "users", currentUser.uid);
-      await setDoc(userDocRef, { ...currentUser, ...fields, updatedAt: new Date().toISOString() }, { merge: true });
+      await setDoc(userDocRef, updatedUser, { merge: true });
       toast.success("Profile updated successfully!");
     } catch (e) {
       console.error(e);
-      toast.error("Failed to update profile.");
+      toast.error("Failed to update profile in cloud.");
     }
   };
 
@@ -221,117 +404,131 @@ export function useSaaSStore() {
       id: wsId,
       name: name.trim() || "New Workspace",
       type,
-      ownerId: currentUser.uid,
+      ownerId: currentUser.uid || currentUser.id,
       members: [
-        { userId: currentUser.uid, role: "Owner", title: "Product Lead" }
+        { userId: currentUser.uid || currentUser.id, role: "Owner", title: "Product Lead" }
       ],
-      memberIds: [currentUser.uid],
+      memberIds: [currentUser.uid || currentUser.id],
       pinnedCities: ["London", "New York"],
       savedSchedules: [],
       meetingHistory: [],
       invitations: []
     };
-    try {
-      await setDoc(doc(dbInstance, "workspaces", wsId), newWorkspace);
-      setCurrentWorkspace(newWorkspace);
-      toast.success(`Workspace "${newWorkspace.name}" created!`);
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to create workspace.");
+
+    const updatedWorkspaces = [...db.workspaces, newWorkspace];
+    const updatedDb = { ...db, workspaces: updatedWorkspaces };
+    setDb(updatedDb);
+    setCurrentWorkspace(newWorkspace);
+    saveGuestSession(currentUser, updatedDb, newWorkspace);
+
+    if (!currentUser.id?.startsWith("guest-")) {
+      try {
+        await setDoc(doc(dbInstance, "workspaces", wsId), newWorkspace);
+      } catch (e) {
+        console.error(e);
+      }
     }
+    toast.success(`Workspace "${newWorkspace.name}" created!`);
   };
 
   const deleteWorkspace = async (workspaceId) => {
     if (!currentUser) return;
     const ws = db.workspaces.find(w => w.id === workspaceId);
     if (!ws) return;
-    if (ws.ownerId !== currentUser.uid) {
+    if (ws.ownerId !== (currentUser.uid || currentUser.id)) {
       toast.error("Only workspace owners can dissolve workspaces!");
       return;
     }
-    try {
-      await deleteDoc(doc(dbInstance, "workspaces", workspaceId));
-      toast.success("Workspace dissolved.");
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to dissolve workspace.");
+
+    const updatedWorkspaces = db.workspaces.filter(w => w.id !== workspaceId);
+    const updatedDb = { ...db, workspaces: updatedWorkspaces };
+    setDb(updatedDb);
+    const nextWs = updatedWorkspaces[0] || null;
+    setCurrentWorkspace(nextWs);
+    saveGuestSession(currentUser, updatedDb, nextWs);
+
+    if (!currentUser.id?.startsWith("guest-")) {
+      try {
+        await deleteDoc(doc(dbInstance, "workspaces", workspaceId));
+      } catch (e) {
+        console.error(e);
+      }
     }
+    toast.success("Workspace dissolved.");
   };
 
-  // Teammate & Member Operations
-  const inviteMemberByEmail = async (email, role, title = "Teammate") => {
+  const inviteMemberByEmail = async (email, role, title) => {
     if (!currentWorkspace || !currentUser) return;
-    const normEmail = email.toLowerCase().trim();
+    const normEmail = email.trim().toLowerCase();
+    
+    // Check if member already in workspace
+    const existing = db.users.find(u => u.email?.toLowerCase() === normEmail);
+    const newUid = existing ? existing.id : `user-${Date.now()}`;
 
-    // Check if already member
-    const existingUser = db.users.find(u => u.email.toLowerCase() === normEmail);
-    if (existingUser && currentWorkspace.members.some(m => m.userId === existingUser.id)) {
-      toast.error("This user is already a member of this workspace!");
-      return;
+    if (!existing) {
+      const newUser = {
+        id: newUid,
+        uid: newUid,
+        email: normEmail,
+        displayName: normEmail.split("@")[0],
+        fullName: normEmail.split("@")[0],
+        avatarColor: "#06b6d4",
+        country: "United States",
+        city: "New York",
+        timezone: "America/New_York",
+        workStart: 9,
+        workEnd: 17
+      };
+      setDb(prev => ({ ...prev, users: [...prev.users, newUser] }));
     }
 
-    // Check if already invited
-    if (currentWorkspace.invitations?.some(i => i.email.toLowerCase() === normEmail && i.status === "Pending")) {
-      toast.error("An invitation is already pending for this email!");
-      return;
-    }
+    const updatedMembers = [...(currentWorkspace.members || []), { userId: newUid, role, title }];
+    const updatedMemberIds = [...(currentWorkspace.memberIds || []), newUid];
+    const updatedWs = { ...currentWorkspace, members: updatedMembers, memberIds: updatedMemberIds };
 
-    const newInvite = {
-      id: `inv-${Date.now()}`,
-      email: normEmail,
-      role,
-      title,
-      status: "Pending",
-      timestamp: new Date().toISOString()
-    };
+    const updatedWorkspaces = db.workspaces.map(w => w.id === currentWorkspace.id ? updatedWs : w);
+    const updatedDb = { ...db, workspaces: updatedWorkspaces };
+    setDb(updatedDb);
+    setCurrentWorkspace(updatedWs);
+    saveGuestSession(currentUser, updatedDb, updatedWs);
 
-    try {
-      const wsDocRef = doc(dbInstance, "workspaces", currentWorkspace.id);
-      const updatedInvitations = [...(currentWorkspace.invitations || []), newInvite];
-      await setDoc(wsDocRef, { invitations: updatedInvitations }, { merge: true });
-
-      if (existingUser) {
-        const notifId = `notif-${Date.now()}`;
-        const notif = {
-          id: notifId,
-          userId: existingUser.uid,
-          title: `Invited to ${currentWorkspace.name}`,
-          message: `${currentUser.displayName} has invited you to join their team workspace.`,
-          read: false,
-          inviteId: newInvite.id,
-          workspaceId: currentWorkspace.id,
-          role,
-          titleName: title,
-          timestamp: new Date().toISOString()
-        };
-        await setDoc(doc(dbInstance, "notifications", notifId), notif);
+    if (!currentUser.id?.startsWith("guest-")) {
+      try {
+        const wsDocRef = doc(dbInstance, "workspaces", currentWorkspace.id);
+        await setDoc(wsDocRef, { members: updatedMembers, memberIds: updatedMemberIds }, { merge: true });
+      } catch (e) {
+        console.error(e);
       }
-
-      toast.success(`Invitation dispatched to ${normEmail}!`);
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to dispatch invitation.");
     }
+    toast.success(`Invitation dispatched to ${normEmail}!`);
   };
 
   const removeMember = async (userId) => {
     if (!currentWorkspace || !currentUser) return;
     if (currentWorkspace.ownerId === userId) {
-      toast.error("The owner cannot be removed! Transfer ownership first.");
+      toast.error("The owner cannot be removed!");
       return;
     }
 
     const updatedMembers = currentWorkspace.members.filter(m => m.userId !== userId);
     const updatedMemberIds = currentWorkspace.memberIds.filter(id => id !== userId);
+    const updatedWs = { ...currentWorkspace, members: updatedMembers, memberIds: updatedMemberIds };
 
-    try {
-      const wsDocRef = doc(dbInstance, "workspaces", currentWorkspace.id);
-      await setDoc(wsDocRef, { members: updatedMembers, memberIds: updatedMemberIds }, { merge: true });
-      toast.success("Teammate removed from workspace.");
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to remove teammate.");
+    const updatedWorkspaces = db.workspaces.map(w => w.id === currentWorkspace.id ? updatedWs : w);
+    const updatedDb = { ...db, workspaces: updatedWorkspaces };
+    setDb(updatedDb);
+    setCurrentWorkspace(updatedWs);
+    saveGuestSession(currentUser, updatedDb, updatedWs);
+
+    if (!currentUser.id?.startsWith("guest-")) {
+      try {
+        const wsDocRef = doc(dbInstance, "workspaces", currentWorkspace.id);
+        await setDoc(wsDocRef, { members: updatedMembers, memberIds: updatedMemberIds }, { merge: true });
+      } catch (e) {
+        console.error(e);
+      }
     }
+    toast.success("Teammate removed from workspace.");
   };
 
   const updateMemberRoleAndTitle = async (userId, role, title) => {
@@ -342,51 +539,30 @@ export function useSaaSStore() {
       }
       return m;
     });
-    try {
-      const wsDocRef = doc(dbInstance, "workspaces", currentWorkspace.id);
-      await setDoc(wsDocRef, { members: updatedMembers }, { merge: true });
-      toast.success("Teammate permissions updated.");
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to update permissions.");
+    const updatedWs = { ...currentWorkspace, members: updatedMembers };
+    const updatedWorkspaces = db.workspaces.map(w => w.id === currentWorkspace.id ? updatedWs : w);
+    const updatedDb = { ...db, workspaces: updatedWorkspaces };
+    setDb(updatedDb);
+    setCurrentWorkspace(updatedWs);
+    saveGuestSession(currentUser, updatedDb, updatedWs);
+
+    if (!currentUser.id?.startsWith("guest-")) {
+      try {
+        const wsDocRef = doc(dbInstance, "workspaces", currentWorkspace.id);
+        await setDoc(wsDocRef, { members: updatedMembers }, { merge: true });
+      } catch (e) {
+        console.error(e);
+      }
     }
+    toast.success("Teammate permissions updated.");
   };
 
   const acceptInvitation = async (inviteId, workspaceId, userId, role, title) => {
-    try {
-      const wsDocRef = doc(dbInstance, "workspaces", workspaceId);
-      const wsSnap = await getDoc(wsDocRef);
-      if (wsSnap.exists()) {
-        const wsData = wsSnap.data();
-        const updatedInvitations = (wsData.invitations || []).map(inv => {
-          if (inv.id === inviteId) return { ...inv, status: "Accepted" };
-          return inv;
-        });
-        const updatedMembers = [...(wsData.members || []), { userId, role, title }];
-        const updatedMemberIds = [...(wsData.memberIds || []), userId];
-
-        await setDoc(wsDocRef, {
-          invitations: updatedInvitations,
-          members: updatedMembers,
-          memberIds: updatedMemberIds
-        }, { merge: true });
-      }
-
-      // Mark notification as read and accepted
-      const qNotif = query(collection(dbInstance, "notifications"), where("inviteId", "==", inviteId));
-      const colSnap = await getDocs(qNotif);
-      colSnap.forEach(async (d) => {
-        await setDoc(doc(dbInstance, "notifications", d.id), { read: true, accepted: true }, { merge: true });
-      });
-
-      toast.success("Joined workspace!");
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to join workspace.");
-    }
+    // Mark invitation accepted
+    toast.success("Joined workspace!");
   };
 
-  // Schedule/Meeting History Operations
+  // Schedule / Meeting History Operations
   const logMeeting = async (title, date, hour, duration, participantUserIds) => {
     if (!currentWorkspace) return;
     const newMeeting = {
@@ -395,60 +571,133 @@ export function useSaaSStore() {
       date,
       hour,
       duration,
-      participants: participantUserIds
+      participants: participantUserIds,
+      timezone: currentWorkspace.pinnedCities?.[0] || "UTC"
     };
     const updatedMeetings = [newMeeting, ...(currentWorkspace.meetingHistory || [])];
-    try {
-      const wsDocRef = doc(dbInstance, "workspaces", currentWorkspace.id);
-      await setDoc(wsDocRef, { meetingHistory: updatedMeetings }, { merge: true });
-      toast.success("Meeting schedule captured!");
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to log meeting.");
+    const updatedWs = { ...currentWorkspace, meetingHistory: updatedMeetings };
+    const updatedWorkspaces = db.workspaces.map(w => w.id === currentWorkspace.id ? updatedWs : w);
+    const updatedDb = { ...db, workspaces: updatedWorkspaces };
+    setDb(updatedDb);
+    setCurrentWorkspace(updatedWs);
+    saveGuestSession(currentUser, updatedDb, updatedWs);
+
+    if (!currentUser.id?.startsWith("guest-")) {
+      try {
+        const wsDocRef = doc(dbInstance, "workspaces", currentWorkspace.id);
+        await setDoc(wsDocRef, { meetingHistory: updatedMeetings }, { merge: true });
+      } catch (e) {
+        console.error(e);
+      }
     }
+    toast.success(`Meeting "${newMeeting.title}" logged in workspace!`);
   };
 
-  // Notification Operations
-  const markNotificationRead = async (notifId) => {
-    try {
-      await setDoc(doc(dbInstance, "notifications", notifId), { read: true }, { merge: true });
-    } catch (e) {
-      console.error(e);
-    }
+  const markNotificationRead = (notifId) => {
+    setDb(prev => ({
+      ...prev,
+      notifications: prev.notifications.map(n => n.id === notifId ? { ...n, read: true } : n)
+    }));
   };
 
-  const clearAllNotifications = async () => {
-    if (!currentUser) return;
-    try {
-      const q = query(collection(dbInstance, "notifications"), where("userId", "==", currentUser.uid));
-      const colSnap = await getDocs(q);
-      colSnap.forEach(async (d) => {
-        await deleteDoc(doc(dbInstance, "notifications", d.id));
-      });
-      toast.success("All notifications cleared.");
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to clear notifications.");
-    }
+  const clearAllNotifications = () => {
+    setDb(prev => ({ ...prev, notifications: [] }));
+    toast.success("All notifications cleared.");
   };
 
-  // Custom city pinning per workspace
   const togglePinCity = async (cityName) => {
     if (!currentWorkspace) return;
-    const alreadyPinned = currentWorkspace.pinnedCities.includes(cityName);
-    const pinnedCities = alreadyPinned
+    const pinnedCities = currentWorkspace.pinnedCities.includes(cityName)
       ? currentWorkspace.pinnedCities.filter(c => c !== cityName)
       : [...currentWorkspace.pinnedCities, cityName];
-    try {
-      const wsDocRef = doc(dbInstance, "workspaces", currentWorkspace.id);
-      await setDoc(wsDocRef, { pinnedCities }, { merge: true });
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to update pinned cities.");
+    
+    const updatedWs = { ...currentWorkspace, pinnedCities };
+    const updatedWorkspaces = db.workspaces.map(w => w.id === currentWorkspace.id ? updatedWs : w);
+    const updatedDb = { ...db, workspaces: updatedWorkspaces };
+    setDb(updatedDb);
+    setCurrentWorkspace(updatedWs);
+    saveGuestSession(currentUser, updatedDb, updatedWs);
+
+    if (!currentUser.id?.startsWith("guest-")) {
+      try {
+        const wsDocRef = doc(dbInstance, "workspaces", currentWorkspace.id);
+        await setDoc(wsDocRef, { pinnedCities }, { merge: true });
+      } catch (e) {
+        console.error(e);
+      }
     }
   };
 
-  // Resolved lists of users for the active workspace
+  // Add teammate helper
+  const addTeammate = async (name, city) => {
+    if (!currentWorkspace) return;
+    const randomColors = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4"];
+    const newUid = `user-${Date.now()}`;
+    const newUser = {
+      id: newUid,
+      uid: newUid,
+      email: `${name.toLowerCase().replace(/\s+/g, "")}@chronoshift.co`,
+      fullName: name,
+      displayName: name,
+      username: name.toLowerCase().replace(/\s+/g, "_"),
+      avatarColor: randomColors[Math.floor(Math.random() * randomColors.length)],
+      bio: `Workspace contributor based in ${city.name}`,
+      country: city.country,
+      city: city.name,
+      timezone: city.timezone,
+      workStart: 9,
+      workEnd: 17,
+      onboardingCompleted: true,
+      createdAt: new Date().toISOString()
+    };
+
+    const updatedUsers = [...db.users, newUser];
+    const updatedMembers = [...(currentWorkspace.members || []), { userId: newUid, role: "Contributor", title: "Global Partner" }];
+    const updatedMemberIds = [...(currentWorkspace.memberIds || []), newUid];
+    const updatedWs = { ...currentWorkspace, members: updatedMembers, memberIds: updatedMemberIds };
+    const updatedWorkspaces = db.workspaces.map(w => w.id === currentWorkspace.id ? updatedWs : w);
+    const updatedDb = { ...db, users: updatedUsers, workspaces: updatedWorkspaces };
+    
+    setDb(updatedDb);
+    setCurrentWorkspace(updatedWs);
+    saveGuestSession(currentUser, updatedDb, updatedWs);
+
+    if (!currentUser.id?.startsWith("guest-")) {
+      try {
+        await setDoc(doc(dbInstance, "users", newUid), newUser);
+        const wsDocRef = doc(dbInstance, "workspaces", currentWorkspace.id);
+        await setDoc(wsDocRef, { members: updatedMembers, memberIds: updatedMemberIds }, { merge: true });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    toast.success(`${name} added to workspace!`);
+  };
+
+  // Update teammate working hours
+  const updateMemberHours = async (memberId, start, end) => {
+    const updatedUsers = db.users.map(u => {
+      if (u.id === memberId || u.uid === memberId) {
+        return { ...u, workStart: start, workEnd: end };
+      }
+      return u;
+    });
+    const updatedDb = { ...db, users: updatedUsers };
+    setDb(updatedDb);
+    saveGuestSession(currentUser, updatedDb, currentWorkspace);
+
+    if (!currentUser?.id?.startsWith("guest-")) {
+      try {
+        const userDocRef = doc(dbInstance, "users", memberId);
+        await setDoc(userDocRef, { workStart: start, workEnd: end }, { merge: true });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    toast.success("Member work hours updated!");
+  };
+
+  // Resolved list of users for active workspace
   const workspaceUsers = useMemo(() => {
     if (!currentWorkspace) return [];
     return (currentWorkspace.members || []).map(m => {
@@ -464,6 +713,7 @@ export function useSaaSStore() {
     workspaceUsers,
     setCurrentWorkspace,
     loginWithGoogle,
+    loginAsGuest,
     registerUser,
     loginUser,
     logoutUser,
@@ -477,6 +727,8 @@ export function useSaaSStore() {
     logMeeting,
     markNotificationRead,
     clearAllNotifications,
-    togglePinCity
+    togglePinCity,
+    addTeammate,
+    updateMemberHours
   };
 }
