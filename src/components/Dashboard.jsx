@@ -4,7 +4,6 @@ import {
   Calendar,
   Users,
   Clock,
-  Sparkles,
   Layers,
   ArrowRight,
   Plus,
@@ -15,9 +14,11 @@ import {
   FileClock,
   Copy,
   ChevronRight,
-  UserX
+  UserX,
+  ShieldCheck
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { findMeetingSlots, getHourCategory, getTimezoneOffset } from "../lib/engine";
 
 export default function Dashboard({
   currentUser,
@@ -29,7 +30,6 @@ export default function Dashboard({
   onInviteQuick
 }) {
   const [inviteEmail, setInviteEmail] = useState("");
-  const [isSyncing, setIsSyncing] = useState(false);
 
   // Live local clock that updates automatically every minute
   const [now, setNow] = useState(() => new Date());
@@ -37,7 +37,7 @@ export default function Dashboard({
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(new Date());
-    }, 60000);
+    }, 30000);
     return () => clearInterval(timer);
   }, []);
 
@@ -182,29 +182,40 @@ export default function Dashboard({
     setInviteEmail("");
   };
 
-  const handleSyncCalendar = () => {
-    setIsSyncing(true);
-    setTimeout(() => {
-      setIsSyncing(false);
-      toast.success("All third-party calendar conflicts re-synchronized and resolved!");
-    }, 1200);
-  };
-
   const handleCopyShareLink = () => {
-    const fakeLink = `https://chronoshift.co/join/${currentWorkspace?.id || "default"}`;
-    navigator.clipboard.writeText(fakeLink);
-    toast.success("Workspace invitation link copied to clipboard!");
+    const inviteLink = `${window.location.origin}?workspace=${encodeURIComponent(currentWorkspace?.id || "default")}`;
+    navigator.clipboard.writeText(inviteLink);
+    toast.success("Workspace link copied to clipboard!");
   };
 
-  // Generate dynamic meeting suggestions based on overlapping work start/ends
+  // Generate dynamic meeting suggestions based on real overlapping work hours
   const generatedOverlapSuggestion = useMemo(() => {
-    if (workspaceUsers.length <= 1) return "Add teammates to find overlapping windows.";
-    
-    return [
-      { id: "slot-1", title: "Primary Overlap", score: 94, time: "14:00 - 15:30 UTC" },
-      { id: "slot-2", title: "Secondary Overlap", score: 81, time: "09:00 - 10:30 UTC" }
-    ];
-  }, [workspaceUsers]);
+    if (!workspaceUsers || workspaceUsers.length <= 1) {
+      return "Add at least two teammates to calculate live overlap windows.";
+    }
+
+    const refTz = currentUser?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const slots = findMeetingSlots({
+      members: workspaceUsers,
+      date: now,
+      durationMinutes: 60,
+      referenceTimezone: refTz,
+      intervalMinutes: 30,
+      minScore: 40
+    });
+
+    if (!slots || slots.length === 0) {
+      return "No high-scoring overlap slots found for today across all teammates.";
+    }
+
+    return slots.slice(0, 3).map((slot, idx) => ({
+      id: `slot-${idx}`,
+      title: idx === 0 ? "Optimal Overlap" : idx === 1 ? "Secondary Window" : "Alternative Window",
+      score: slot.score,
+      time: `${slot.startTime} – ${slot.endTime} (${slot.referenceTimezone.split("/")[1]?.replace("_", " ") || slot.referenceTimezone})`,
+      slotData: slot
+    }));
+  }, [workspaceUsers, currentUser, now]);
 
   return (
     <div className="space-y-6">
@@ -352,38 +363,38 @@ export default function Dashboard({
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-zinc-400" />
                 <h3 className="text-xs font-mono font-bold tracking-wider uppercase text-zinc-900 dark:text-zinc-100">
-                  Third-Party Calendar Feeds
+                  Calendar Integrations & Export
                 </h3>
               </div>
               <button
-                onClick={handleSyncCalendar}
-                disabled={isSyncing}
-                className="text-[10px] font-mono font-bold text-indigo-500 hover:underline"
+                onClick={() => onNavigate("planner")}
+                className="text-[10px] font-mono font-bold text-indigo-500 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
               >
-                {isSyncing ? "SYNCING..." : "SYNC NOW"}
+                <span>OPEN PLANNER</span>
+                <ArrowRight className="w-3 h-3" />
               </button>
             </div>
 
             <div className="space-y-3">
               <div className="p-3 border border-zinc-100 dark:border-zinc-900/40 rounded-xl bg-zinc-50/20 dark:bg-[#121214]/10 flex items-center justify-between">
                 <div>
-                  <span className="text-xs font-bold block text-zinc-800 dark:text-zinc-200">Google Calendar</span>
-                  <span className="text-[10px] text-zinc-400 block mt-0.5">Active Sync: {currentUser?.email}</span>
+                  <span className="text-xs font-bold block text-zinc-800 dark:text-zinc-200">RFC 5545 iCalendar (.ics)</span>
+                  <span className="text-[10px] text-zinc-400 block mt-0.5">Universal format compatible with Apple Calendar, Outlook, and Google</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span className="text-[10px] font-mono font-bold text-zinc-400">ACTIVE</span>
+                  <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">READY</span>
                 </div>
               </div>
 
               <div className="p-3 border border-zinc-100 dark:border-zinc-900/40 rounded-xl bg-zinc-50/20 dark:bg-[#121214]/10 flex items-center justify-between">
                 <div>
-                  <span className="text-xs font-bold block text-zinc-800 dark:text-zinc-200">Apple iCal (Local ICS Export)</span>
-                  <span className="text-[10px] text-zinc-400 block mt-0.5">Auto-compiled calendars on schedule completion</span>
+                  <span className="text-xs font-bold block text-zinc-800 dark:text-zinc-200">Web Calendar Dispatch</span>
+                  <span className="text-[10px] text-zinc-400 block mt-0.5">Direct 1-click links to Google Calendar, Outlook Web, Office 365, Yahoo</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
-                  <span className="text-[10px] font-mono font-bold text-zinc-400">STANDBY</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">SUPPORTED</span>
                 </div>
               </div>
             </div>
@@ -562,6 +573,17 @@ export default function Dashboard({
 
         </div>
 
+      </div>
+
+      {/* 5. DATA PROVENANCE & ENGINE ATTRIBUTION */}
+      <div className="pt-6 pb-2 border-t border-zinc-200/60 dark:border-zinc-900/60 text-center text-[10px] font-mono text-zinc-400 flex flex-wrap items-center justify-center gap-3">
+        <span>⚡ Timezone Engine: IANA / Intl Standards</span>
+        <span>•</span>
+        <span>📅 Holidays: Nager.Date API</span>
+        <span>•</span>
+        <span>🗺️ Geometry: Natural Earth 110m</span>
+        <span>•</span>
+        <span>🕒 Clock: Real-Time System</span>
       </div>
 
     </div>

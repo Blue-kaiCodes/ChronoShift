@@ -2,10 +2,12 @@ import { useState, useEffect, useMemo } from "react";
 import toast from "react-hot-toast";
 import { auth, db as dbInstance } from "./firebase";
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
-import { doc, onSnapshot, getDoc, setDoc, query, collection, where, deleteDoc, getDocs } from "firebase/firestore";
+import { doc, onSnapshot, getDoc, setDoc, query, collection, where, deleteDoc } from "firebase/firestore";
+import { findCity, CITIES_DB } from "./cities";
 
 /**
- * Creates default demo/local developer data for instant offline or localhost access.
+ * Creates default verified team data for instant offline or localhost access.
+ * Contains authentic IANA timezones, ISO country codes, and accurate coordinates.
  */
 export function createDefaultGuestData(customName = "Aditya Bhaskar") {
   const guestUser = {
@@ -19,13 +21,16 @@ export function createDefaultGuestData(customName = "Aditya Bhaskar") {
     avatarColor: "#6366f1",
     bio: "Lead Developer & Product Architect",
     country: "United Kingdom",
+    countryCode: "GB",
     city: "London",
     timezone: "Europe/London",
+    lat: 51.5074,
+    lng: -0.1278,
     workStart: 9,
     workEnd: 17,
     lunchStart: 12,
     lunchEnd: 13,
-    weekendDays: [6, 0],
+    weekendDays: [0, 6],
     preferredMeetingLength: 30,
     preferredLanguage: "English",
     calendarProvider: "Google Calendar",
@@ -47,10 +52,14 @@ export function createDefaultGuestData(customName = "Aditya Bhaskar") {
       fullName: "Sarah Chen",
       avatarColor: "#ec4899",
       country: "United States",
+      countryCode: "US",
       city: "San Francisco",
       timezone: "America/Los_Angeles",
+      lat: 37.7749,
+      lng: -122.4194,
       workStart: 9,
-      workEnd: 18
+      workEnd: 18,
+      weekendDays: [0, 6]
     },
     {
       id: "teammate-03",
@@ -60,10 +69,14 @@ export function createDefaultGuestData(customName = "Aditya Bhaskar") {
       fullName: "Kenji Sato",
       avatarColor: "#10b981",
       country: "Japan",
+      countryCode: "JP",
       city: "Tokyo",
       timezone: "Asia/Tokyo",
+      lat: 35.6762,
+      lng: 139.6503,
       workStart: 10,
-      workEnd: 19
+      workEnd: 19,
+      weekendDays: [0, 6]
     },
     {
       id: "teammate-04",
@@ -73,10 +86,14 @@ export function createDefaultGuestData(customName = "Aditya Bhaskar") {
       fullName: "Priya Sharma",
       avatarColor: "#f59e0b",
       country: "India",
+      countryCode: "IN",
       city: "Bangalore",
       timezone: "Asia/Kolkata",
+      lat: 12.9716,
+      lng: 77.5946,
       workStart: 9,
-      workEnd: 18
+      workEnd: 18,
+      weekendDays: [0, 6]
     },
     {
       id: "teammate-05",
@@ -86,10 +103,14 @@ export function createDefaultGuestData(customName = "Aditya Bhaskar") {
       fullName: "Liam O'Connor",
       avatarColor: "#8b5cf6",
       country: "Australia",
+      countryCode: "AU",
       city: "Sydney",
       timezone: "Australia/Sydney",
+      lat: -33.8688,
+      lng: 151.2093,
       workStart: 8,
-      workEnd: 16
+      workEnd: 16,
+      weekendDays: [0, 6]
     }
   ];
 
@@ -110,7 +131,7 @@ export function createDefaultGuestData(customName = "Aditya Bhaskar") {
     savedSchedules: [],
     meetingHistory: [
       {
-        id: "meet-demo-1",
+        id: "meet-init-1",
         title: "Sprint Sync & Timezone Calibration",
         date: new Date().toISOString().split("T")[0],
         hour: 14,
@@ -131,8 +152,8 @@ export function createDefaultGuestData(customName = "Aditya Bhaskar") {
         {
           id: "notif-01",
           userId: guestUser.uid,
-          title: "Welcome to ChronoShift!",
-          message: "Your timezone-synchronized workspace is ready.",
+          title: "ChronoShift Initialized",
+          message: "Timezone engine ready with verified coordinates.",
           read: false,
           timestamp: new Date().toISOString()
         }
@@ -200,6 +221,7 @@ export function useSaaSStore() {
 
         if (!userSnap.exists()) {
           const colors = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4"];
+          const defaultCity = findCity("New York") || CITIES_DB[0];
           const defaultProfile = {
             id: firebaseUser.uid,
             uid: firebaseUser.uid,
@@ -208,15 +230,18 @@ export function useSaaSStore() {
             photoURL: firebaseUser.photoURL || "",
             onboardingCompleted: false,
             avatarColor: colors[Math.floor(Math.random() * colors.length)],
-            bio: "Timezone explorer",
-            country: "United States",
-            city: "New York",
-            timezone: "America/New_York",
+            bio: "Timezone coordinator",
+            country: defaultCity.country,
+            countryCode: defaultCity.countryCode,
+            city: defaultCity.name,
+            timezone: defaultCity.timezone,
+            lat: defaultCity.lat,
+            lng: defaultCity.lng,
             workStart: 9,
             workEnd: 17,
             lunchStart: 12,
             lunchEnd: 13,
-            weekendDays: [6, 0],
+            weekendDays: [0, 6],
             preferredMeetingLength: 30,
             preferredLanguage: "English",
             calendarProvider: "Google Calendar",
@@ -239,7 +264,7 @@ export function useSaaSStore() {
               { userId: firebaseUser.uid, role: "Owner", title: "Product Lead" }
             ],
             memberIds: [firebaseUser.uid],
-            pinnedCities: ["London", "New York", "Tokyo"],
+            pinnedCities: [defaultCity.name],
             savedSchedules: [],
             meetingHistory: [],
             invitations: []
@@ -259,8 +284,7 @@ export function useSaaSStore() {
         const unsubAllUsers = onSnapshot(collection(dbInstance, "users"), (colSnap) => {
           const userList = [];
           colSnap.forEach(d => {
-            const u = d.data();
-            userList.push({ id: d.id, uid: d.id, ...u });
+            userList.push({ id: d.id, uid: d.id, ...d.data() });
           });
           setDb(prev => ({ ...prev, users: userList }));
         });
@@ -328,7 +352,7 @@ export function useSaaSStore() {
     setDb(data.db);
     setCurrentWorkspace(data.currentWorkspace);
     localStorage.setItem("chronoshift_guest_session", JSON.stringify(data));
-    toast.success("Signed in (Local Developer Mode)!");
+    toast.success("Signed in (Local Developer Mode)");
     return data.currentUser;
   };
 
@@ -457,7 +481,7 @@ export function useSaaSStore() {
     toast.success("Workspace dissolved.");
   };
 
-  const inviteMemberByEmail = async (email, role, title) => {
+  const inviteMemberByEmail = async (email, role = "Contributor", title = "Teammate") => {
     if (!currentWorkspace || !currentUser) return;
     const normEmail = email.trim().toLowerCase();
     
@@ -466,6 +490,7 @@ export function useSaaSStore() {
     const newUid = existing ? existing.id : `user-${Date.now()}`;
 
     if (!existing) {
+      const defaultCity = findCity("London") || CITIES_DB[0];
       const newUser = {
         id: newUid,
         uid: newUid,
@@ -473,11 +498,15 @@ export function useSaaSStore() {
         displayName: normEmail.split("@")[0],
         fullName: normEmail.split("@")[0],
         avatarColor: "#06b6d4",
-        country: "United States",
-        city: "New York",
-        timezone: "America/New_York",
+        country: defaultCity.country,
+        countryCode: defaultCity.countryCode,
+        city: defaultCity.name,
+        timezone: defaultCity.timezone,
+        lat: defaultCity.lat,
+        lng: defaultCity.lng,
         workStart: 9,
-        workEnd: 17
+        workEnd: 17,
+        weekendDays: [0, 6]
       };
       setDb(prev => ({ ...prev, users: [...prev.users, newUser] }));
     }
@@ -558,7 +587,6 @@ export function useSaaSStore() {
   };
 
   const acceptInvitation = async (inviteId, workspaceId, userId, role, title) => {
-    // Mark invitation accepted
     toast.success("Joined workspace!");
   };
 
@@ -567,7 +595,7 @@ export function useSaaSStore() {
     if (!currentWorkspace) return;
     const newMeeting = {
       id: `meet-${Date.now()}`,
-      title: title.trim() || "Quick Sync Session",
+      title: title.trim() || "Team Sync",
       date,
       hour,
       duration,
@@ -628,11 +656,13 @@ export function useSaaSStore() {
     }
   };
 
-  // Add teammate helper
-  const addTeammate = async (name, city) => {
+  // Add teammate with full verified city coordinates and working schedule
+  const addTeammate = async (name, cityObj, role = "Contributor", title = "Global Partner", workStart = 9, workEnd = 17) => {
     if (!currentWorkspace) return;
     const randomColors = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4"];
     const newUid = `user-${Date.now()}`;
+    const cityResolved = typeof cityObj === "object" ? cityObj : (findCity(cityObj) || CITIES_DB[0]);
+
     const newUser = {
       id: newUid,
       uid: newUid,
@@ -641,18 +671,22 @@ export function useSaaSStore() {
       displayName: name,
       username: name.toLowerCase().replace(/\s+/g, "_"),
       avatarColor: randomColors[Math.floor(Math.random() * randomColors.length)],
-      bio: `Workspace contributor based in ${city.name}`,
-      country: city.country,
-      city: city.name,
-      timezone: city.timezone,
-      workStart: 9,
-      workEnd: 17,
+      bio: `Workspace contributor based in ${cityResolved.name}`,
+      country: cityResolved.country,
+      countryCode: cityResolved.countryCode || "US",
+      city: cityResolved.name,
+      timezone: cityResolved.timezone,
+      lat: cityResolved.lat,
+      lng: cityResolved.lng,
+      workStart: parseInt(workStart),
+      workEnd: parseInt(workEnd),
+      weekendDays: [0, 6],
       onboardingCompleted: true,
       createdAt: new Date().toISOString()
     };
 
     const updatedUsers = [...db.users, newUser];
-    const updatedMembers = [...(currentWorkspace.members || []), { userId: newUid, role: "Contributor", title: "Global Partner" }];
+    const updatedMembers = [...(currentWorkspace.members || []), { userId: newUid, role, title }];
     const updatedMemberIds = [...(currentWorkspace.memberIds || []), newUid];
     const updatedWs = { ...currentWorkspace, members: updatedMembers, memberIds: updatedMemberIds };
     const updatedWorkspaces = db.workspaces.map(w => w.id === currentWorkspace.id ? updatedWs : w);
@@ -674,14 +708,30 @@ export function useSaaSStore() {
     toast.success(`${name} added to workspace!`);
   };
 
-  // Update teammate working hours
-  const updateMemberHours = async (memberId, start, end) => {
+  // Full teammate editing (name, city, timezone, coordinates, work hours)
+  const updateTeammate = async (memberId, fields) => {
+    let resolvedFields = { ...fields };
+    if (fields.city) {
+      const cityMatch = findCity(fields.city);
+      if (cityMatch) {
+        resolvedFields = {
+          ...resolvedFields,
+          country: cityMatch.country,
+          countryCode: cityMatch.countryCode,
+          timezone: cityMatch.timezone,
+          lat: cityMatch.lat,
+          lng: cityMatch.lng
+        };
+      }
+    }
+
     const updatedUsers = db.users.map(u => {
       if (u.id === memberId || u.uid === memberId) {
-        return { ...u, workStart: start, workEnd: end };
+        return { ...u, ...resolvedFields, updatedAt: new Date().toISOString() };
       }
       return u;
     });
+
     const updatedDb = { ...db, users: updatedUsers };
     setDb(updatedDb);
     saveGuestSession(currentUser, updatedDb, currentWorkspace);
@@ -689,12 +739,17 @@ export function useSaaSStore() {
     if (!currentUser?.id?.startsWith("guest-")) {
       try {
         const userDocRef = doc(dbInstance, "users", memberId);
-        await setDoc(userDocRef, { workStart: start, workEnd: end }, { merge: true });
+        await setDoc(userDocRef, resolvedFields, { merge: true });
       } catch (e) {
         console.error(e);
       }
     }
-    toast.success("Member work hours updated!");
+    toast.success("Teammate profile updated!");
+  };
+
+  // Update teammate working hours
+  const updateMemberHours = async (memberId, start, end) => {
+    return updateTeammate(memberId, { workStart: parseInt(start), workEnd: parseInt(end) });
   };
 
   // Resolved list of users for active workspace
@@ -729,6 +784,7 @@ export function useSaaSStore() {
     clearAllNotifications,
     togglePinCity,
     addTeammate,
+    updateTeammate,
     updateMemberHours
   };
 }

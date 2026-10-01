@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, MapPin, Moon, Sun, Trash2, ArrowRight, Sliders, CalendarDays } from "lucide-react";
+import { Search, MapPin, Moon, Sun, Trash2, ArrowRight, Sliders, CalendarDays, Calendar, Users, LayoutDashboard, History, Settings } from "lucide-react";
 import { searchCities } from "../lib/cities";
 
 export default function CommandPalette({
@@ -11,7 +11,9 @@ export default function CommandPalette({
   setIsDark,
   clearTeam,
   alignOptimal,
-  resetToToday
+  resetToToday,
+  adjustDate,
+  onNavigate
 }) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -40,6 +42,51 @@ export default function CommandPalette({
       icon: CalendarDays,
       action: () => {
         resetToToday();
+        onClose();
+      }
+    },
+    {
+      id: "jump_tomorrow",
+      label: "Jump to tomorrow (+1 day)",
+      icon: Calendar,
+      action: () => {
+        if (adjustDate) adjustDate(1);
+        onClose();
+      }
+    },
+    {
+      id: "jump_next_week",
+      label: "Jump to next week (+7 days)",
+      icon: Calendar,
+      action: () => {
+        if (adjustDate) adjustDate(7);
+        onClose();
+      }
+    },
+    {
+      id: "nav_planner",
+      label: "Navigate to Timeline Planner",
+      icon: CalendarDays,
+      action: () => {
+        if (onNavigate) onNavigate("planner");
+        onClose();
+      }
+    },
+    {
+      id: "nav_team",
+      label: "Navigate to Team Roster",
+      icon: Users,
+      action: () => {
+        if (onNavigate) onNavigate("team");
+        onClose();
+      }
+    },
+    {
+      id: "nav_dashboard",
+      label: "Navigate to Dashboard",
+      icon: LayoutDashboard,
+      action: () => {
+        if (onNavigate) onNavigate("dashboard");
         onClose();
       }
     },

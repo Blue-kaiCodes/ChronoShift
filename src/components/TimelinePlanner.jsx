@@ -17,14 +17,21 @@ import {
   Coffee,
   Briefcase,
   CalendarDays,
-  Sparkles,
+  Zap,
   Info,
   Share2,
   Map,
   LayoutList
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { calculateTimelineData, getTimezoneOffset, getTopGoldenHours } from "../lib/engine";
+import {
+  calculateTimelineData,
+  getTimezoneOffset,
+  getTopGoldenHours,
+  findMeetingSlots,
+  getDSTInfo,
+  getHourCategory
+} from "../lib/engine";
 import { getGoogleCalendarUrl, getOutlookCalendarUrl, downloadIcsFile } from "../lib/calendar";
 import { getPublicHoliday, isWeekend } from "../lib/holidays";
 import { CITIES_DB } from "../lib/cities";
@@ -55,14 +62,59 @@ export default function TimelinePlanner({
   const gridContainerRef = useRef(null);
 
   // Derive master timeline data
+  // Derive master timeline data
   const timelineResult = useMemo(() => {
-    return calculateTimelineData(members, currentDate, referenceTimezone);
-  }, [members, currentDate, referenceTimezone]);
+    return calculateTimelineData(members, currentDate, referenceTimezone, duration);
+  }, [members, currentDate, referenceTimezone, duration]);
+
+  // Duration-aware meeting candidate slots
+  const meetingSlots = useMemo(() => {
+    return findMeetingSlots({
+      members,
+      date: currentDate,
+      durationMinutes: duration,
+      referenceTimezone,
+      intervalMinutes: 30,
+      minScore: 20
+    });
+  }, [members, currentDate, duration, referenceTimezone]);
 
   const topGoldenHours = useMemo(() => {
+    if (meetingSlots && meetingSlots.length > 0) {
+      return meetingSlots.slice(0, 3).map(slot => ({
+        hour: slot.hour,
+        timeString: slot.timeString,
+        score: slot.score
+      }));
+    }
     if (!timelineResult) return [];
     return getTopGoldenHours(timelineResult.hourlyData, 3);
-  }, [timelineResult]);
+  }, [meetingSlots, timelineResult]);
+
+  // Proactive DST transition alerts within 14 days
+  const dstAlerts = useMemo(() => {
+    const alerts = [];
+    const seen = new Set();
+    members.forEach(m => {
+      if (m.timezone && !seen.has(m.timezone)) {
+        seen.add(m.timezone);
+        const info = getDSTInfo(m.timezone, currentDate);
+        if (info.nextTransition) {
+          const daysAway = Math.round((info.nextTransition.date.getTime() - currentDate.getTime()) / 86400000);
+          if (daysAway >= 0 && daysAway <= 14) {
+            alerts.push({
+              timezone: m.timezone,
+              memberName: m.name,
+              daysAway,
+              dateStr: info.nextTransition.date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+              shift: info.nextTransition.shiftHours > 0 ? `+${info.nextTransition.shiftHours}h` : `${info.nextTransition.shiftHours}h`
+            });
+          }
+        }
+      }
+    });
+    return alerts;
+  }, [members, currentDate]);
 
   const isEmpty = members.length === 0;
 
@@ -74,9 +126,11 @@ export default function TimelinePlanner({
     return new Date(startOfDayUtc.getTime() + (activeHour - referenceOffset) * 3600000);
   }, [currentDate, activeHour, timelineResult]);
 
-  // Translate hours & categories for all members
+  // Translate hours & categories for all members with duration awareness
   const localizedTimes = useMemo(() => {
     if (isEmpty || !proposedMeetingTimeUTC) return [];
+    const proposedMeetingEndTimeUTC = new Date(proposedMeetingTimeUTC.getTime() + duration * 60000);
+
     return members.map(m => {
       const timeFormatter = new Intl.DateTimeFormat("en-US", {
         timeZone: m.timezone,
@@ -88,36 +142,39 @@ export default function TimelinePlanner({
         timeZone: m.timezone,
         weekday: "short"
       });
-      const localTime = timeFormatter.format(proposedMeetingTimeUTC);
+      const localStart = timeFormatter.format(proposedMeetingTimeUTC);
+      const localEnd = timeFormatter.format(proposedMeetingEndTimeUTC);
       const localWeekday = weekdayFormatter.format(proposedMeetingTimeUTC);
-      const localString = `${localWeekday}, ${localTime}`;
+      const localString = `${localWeekday}, ${localStart} – ${localEnd}`;
 
       const offset = getTimezoneOffset(m.timezone, proposedMeetingTimeUTC);
       const diffFromRef = offset - getTimezoneOffset(referenceTimezone, proposedMeetingTimeUTC);
       const localHourInt = (activeHour + diffFromRef + 24) % 24;
 
-      // Classify hour category
-      let category = "sleeping";
-      if (localHourInt >= (m.workStart || 9) && localHourInt < (m.workEnd || 17)) {
-        category = "working";
-      } else if (localHourInt >= 6 && localHourInt < 22) {
-        category = "personal";
-      }
+      // Classify hour category using robust overnight & duration logic
+      const category = getHourCategory(localHourInt, m.workStart ?? 9, m.workEnd ?? 17);
+
+      const holidayInfo = getPublicHoliday(m.countryCode || m.country, proposedMeetingTimeUTC);
+      const localDate = new Date(proposedMeetingTimeUTC.getTime() + offset * 3600000);
+      const isWeekendDay = isWeekend(localDate, m.weekendDays || [0, 6]);
 
       return {
         id: m.id,
         name: m.name,
         city: m.city,
         localString,
-        localTime,
+        localTime: localStart,
+        localEndTime: localEnd,
         localWeekday,
         category,
         localHour: localHourInt,
+        holiday: holidayInfo?.name || null,
+        isWeekend: isWeekendDay,
         offsetString: `UTC${offset >= 0 ? "+" : ""}${offset}`,
         diffFromRefString: diffFromRef === 0 ? "Same time" : `${diffFromRef > 0 ? "+" : ""}${diffFromRef}h`
       };
     });
-  }, [members, proposedMeetingTimeUTC, referenceTimezone, activeHour, isEmpty]);
+  }, [members, proposedMeetingTimeUTC, duration, referenceTimezone, activeHour, isEmpty]);
 
   // Active meeting slot details
   const activeSlotData = useMemo(() => {
@@ -340,7 +397,7 @@ export default function TimelinePlanner({
               {/* Top Golden Hours Multi-Picker */}
               {topGoldenHours.length > 0 && (
                 <div className="hidden md:flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] font-mono">
-                  <Sparkles className="w-3 h-3 text-amber-500" />
+                  <Zap className="w-3 h-3 text-amber-500" />
                   <span className="font-bold text-amber-600 dark:text-amber-400 mr-1">Golden:</span>
                   {topGoldenHours.map((gh, idx) => (
                     <button
@@ -389,6 +446,17 @@ export default function TimelinePlanner({
               </div>
             </div>
           </div>
+
+          {/* Proactive Daylight Saving Time Transition Banner */}
+          {dstAlerts.length > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-300">
+              <Info className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>
+                <strong>Daylight Saving Alert:</strong>{" "}
+                {dstAlerts.map(a => `${a.memberName} (${a.timezone}) shifts ${a.shift} on ${a.dateStr} (in ${a.daysAway} days)`).join(" • ")}
+              </span>
+            </div>
+          )}
 
           {viewMode === "map" ? (
             <WorldMap
@@ -466,11 +534,11 @@ export default function TimelinePlanner({
 
                 // Find the local string matching the selected hour
                 const localData = localizedTimes.find(t => t.id === member.id);
-                // Check public holiday / weekend
                 const cityMatch = CITIES_DB.find(c => c.name.toLowerCase() === (member.city || "").toLowerCase());
-                const memberCountry = member.country || cityMatch?.country;
+                const memberCountry = member.countryCode || member.country || cityMatch?.countryCode || cityMatch?.country;
                 const holiday = getPublicHoliday(memberCountry, currentDate);
-                const weekend = isWeekend(currentDate);
+                const localMemberDate = new Date(currentDate.getTime() + offset * 3600000);
+                const weekend = isWeekend(localMemberDate, member.weekendDays || [0, 6]);
 
                 return (
                   <div key={member.id} className="flex flex-col gap-2 relative z-20">
@@ -686,12 +754,12 @@ export default function TimelinePlanner({
                 <span className="block text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mb-2">
                   Duration
                 </span>
-                <div className="flex gap-1.5">
-                  {[30, 60, 90, 120].map((m) => (
+                <div className="flex flex-wrap gap-1.5">
+                  {[15, 30, 45, 60, 90, 120].map((m) => (
                     <button
                       key={m}
                       onClick={() => setDuration(m)}
-                      className={`flex-1 py-1.5 rounded-lg text-[11px] font-mono font-bold border transition-all cursor-pointer ${
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-mono font-bold border transition-all cursor-pointer ${
                         duration === m
                            ? "bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-950 border-zinc-950 dark:border-zinc-100 shadow-sm"
                            : "bg-white dark:bg-zinc-900 text-zinc-500 border-zinc-200/80 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700"
@@ -712,28 +780,35 @@ export default function TimelinePlanner({
                 </span>
                 
                 {/* Horizontal flow cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-2.5 max-h-[140px] overflow-y-auto pr-1">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-2.5 max-h-[160px] overflow-y-auto pr-1">
                   {localizedTimes.map((t) => (
                     <div
                       key={t.id}
                       className="p-3 rounded-xl bg-zinc-50/50 dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-900 flex flex-col gap-1 text-left"
                     >
-                      <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="flex items-center justify-between gap-1 min-w-0">
                         <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
                           {t.name}
                         </span>
                         <span className="text-[9px] font-mono text-zinc-400 shrink-0">
-                          ({t.diffFromRefString})
+                          {t.diffFromRefString}
                         </span>
                       </div>
                       <div className="flex items-baseline justify-between mt-1">
-                        <span className="text-sm font-extrabold font-mono text-zinc-900 dark:text-zinc-100">
-                          {t.localTime}
+                        <span className="text-xs font-extrabold font-mono text-zinc-900 dark:text-zinc-100">
+                          {t.localTime} – {t.localEndTime}
                         </span>
-                        <span className="text-[9px] font-mono text-zinc-400 uppercase tracking-wider">
+                        <span className={`text-[9px] font-mono uppercase tracking-wider font-bold ${
+                          t.category === "working" ? "text-emerald-500" : t.category === "personal" ? "text-amber-500" : "text-rose-400"
+                        }`}>
                           {t.category}
                         </span>
                       </div>
+                      {(t.holiday || t.isWeekend) && (
+                        <div className="mt-0.5 flex items-center gap-1 text-[9px] font-medium text-amber-600 dark:text-amber-400 truncate">
+                          {t.holiday ? `🏖️ ${t.holiday}` : `🌙 Weekend`}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

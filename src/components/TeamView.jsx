@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Users,
   UserPlus,
@@ -12,9 +12,14 @@ import {
   Clock,
   Briefcase,
   Sliders,
-  Check
+  Check,
+  X,
+  Edit2,
+  MapPin,
+  Moon
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { searchCities } from "../lib/cities";
 
 export default function TeamView({
   currentUser,
@@ -22,13 +27,19 @@ export default function TeamView({
   workspaceUsers,
   onInvite,
   onRemoveMember,
-  onUpdateRole
+  onUpdateRole,
+  onUpdateTeammate
 }) {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("Contributor");
   const [inviteTitle, setInviteTitle] = useState("");
   
-  const [editingUserId, setEditingUserId] = useState(null);
+  const [editingMember, setEditingMember] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editCity, setEditCity] = useState("");
+  const [citySuggestions, setCitySuggestions] = useState([]);
+  const [editWorkStart, setEditWorkStart] = useState(9);
+  const [editWorkEnd, setEditWorkEnd] = useState(17);
   const [editRole, setEditRole] = useState("Contributor");
   const [editTitle, setEditTitle] = useState("");
 
@@ -41,20 +52,67 @@ export default function TeamView({
   };
 
   const handleCopyLink = () => {
-    const inviteLink = `https://chronoshift.co/join/${currentWorkspace?.id || "default"}`;
+    const inviteLink = `${window.location.origin}?workspace=${encodeURIComponent(currentWorkspace?.id || "default")}`;
     navigator.clipboard.writeText(inviteLink);
     toast.success("Teammate invite link copied to clipboard!");
   };
 
-  const handleSaveEdit = (userId) => {
-    onUpdateRole(userId, editRole, editTitle);
-    setEditingUserId(null);
-  };
-
   const startEditing = (member) => {
-    setEditingUserId(member.id);
+    setEditingMember(member);
+    setEditName(member.displayName || member.fullName || "");
+    setEditCity(member.city || "");
+    setCitySuggestions([]);
+    setEditWorkStart(member.workStart !== undefined ? member.workStart : 9);
+    setEditWorkEnd(member.workEnd !== undefined ? member.workEnd : 17);
     setEditRole(member.workspaceRole || "Contributor");
     setEditTitle(member.workspaceTitle || "");
+  };
+
+  const handleCityChange = (val) => {
+    setEditCity(val);
+    if (val.trim().length >= 2) {
+      setCitySuggestions(searchCities(val.trim(), 5));
+    } else {
+      setCitySuggestions([]);
+    }
+  };
+
+  const handleSelectCity = (cityObj) => {
+    setEditCity(cityObj.name);
+    setCitySuggestions([]);
+  };
+
+  const handleSaveTeammate = (e) => {
+    e.preventDefault();
+    if (!editingMember) return;
+
+    if (!editName.trim()) {
+      toast.error("Please enter a valid teammate name.");
+      return;
+    }
+
+    const start = parseInt(editWorkStart, 10);
+    const end = parseInt(editWorkEnd, 10);
+    if (isNaN(start) || start < 0 || start > 23 || isNaN(end) || end < 0 || end > 23) {
+      toast.error("Working hours must be between 00:00 and 23:00.");
+      return;
+    }
+
+    if (onUpdateTeammate) {
+      onUpdateTeammate(editingMember.id, {
+        displayName: editName.trim(),
+        fullName: editName.trim(),
+        city: editCity.trim(),
+        workStart: start,
+        workEnd: end
+      });
+    }
+
+    if (onUpdateRole) {
+      onUpdateRole(editingMember.id, editRole, editTitle.trim());
+    }
+
+    setEditingMember(null);
   };
 
   // Determine current user's role in this workspace to enforce security restrictions
@@ -194,96 +252,84 @@ export default function TeamView({
               <span>Workspace members</span>
             </h3>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               {workspaceUsers.map((member) => {
                 const isMe = member.id === currentUser?.id;
-                const isEditing = editingUserId === member.id;
+                const workStart = member.workStart !== undefined ? member.workStart : 9;
+                const workEnd = member.workEnd !== undefined ? member.workEnd : 17;
+                const isOvernight = workStart > workEnd;
 
                 return (
                   <div
                     key={member.id}
-                    className="p-4 bg-zinc-50/30 dark:bg-[#121214]/30 border border-zinc-100 dark:border-zinc-900/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all hover:border-zinc-200 dark:hover:border-zinc-800"
+                    className="p-4 bg-zinc-50/40 dark:bg-[#121214]/40 border border-zinc-100 dark:border-zinc-900/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all hover:border-zinc-200 dark:hover:border-zinc-800"
                   >
                     <div className="flex items-center gap-3">
                       <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0"
+                        className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 shadow-sm"
                         style={{ backgroundColor: member.avatarColor || "#71717a" }}
                       >
                         {(member.displayName || member.fullName || member.email || "U").charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
                             {member.displayName || member.fullName || member.email || "Anonymous"}
                           </span>
                           {isMe && (
-                            <span className="text-[9px] font-mono bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-1.5 rounded font-bold">
+                            <span className="text-[9px] font-mono bg-indigo-500/10 text-indigo-500 px-1.5 py-0.5 rounded font-bold">
                               YOU
                             </span>
                           )}
+                          <span className="text-[9px] font-mono bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded uppercase font-bold">
+                            {member.workspaceRole || "Contributor"}
+                          </span>
                         </div>
-                        <span className="text-[10px] text-zinc-400 font-mono block mt-0.5">
-                          @{member.username} • {member.city}, {member.country}
-                        </span>
-                        <span className="text-[10px] text-indigo-500 font-medium block mt-1 flex items-center gap-1">
-                          <Briefcase className="w-3 h-3 shrink-0" />
-                          <span>{member.workspaceTitle || "Team Member"}</span>
-                        </span>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[10px] text-zinc-400 font-mono">
+                          <span className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3 text-zinc-400" />
+                            {member.city || "Unknown City"}
+                          </span>
+                          <span>•</span>
+                          <span>{member.timezone}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-[10px]">
+                          <span className="text-zinc-500 dark:text-zinc-400 font-mono flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-zinc-400" />
+                            Hours: {String(workStart).padStart(2, "0")}:00 – {String(workEnd).padStart(2, "0")}:00
+                            {isOvernight && (
+                              <span className="text-amber-500 font-bold ml-1">(Overnight)</span>
+                            )}
+                          </span>
+                          {member.workspaceTitle && (
+                            <>
+                              <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                              <span className="text-indigo-500 font-medium">{member.workspaceTitle}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 self-end sm:self-auto">
-                      {isEditing ? (
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={editRole}
-                            onChange={(e) => setEditRole(e.target.value)}
-                            className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-1 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none"
-                          >
-                            <option>Contributor</option>
-                            <option>Admin</option>
-                            <option>Owner</option>
-                          </select>
-                          <input
-                            type="text"
-                            placeholder="Title"
-                            value={editTitle}
-                            onChange={(e) => setEditTitle(e.target.value)}
-                            className="w-24 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-1 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none"
-                          />
-                          <button
-                            onClick={() => handleSaveEdit(member.id)}
-                            className="p-1 bg-emerald-500 text-white rounded hover:opacity-95"
-                          >
-                            <Check className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="text-right">
-                          <span className="text-[10px] font-mono bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/40 dark:border-zinc-800 px-2.5 py-1 rounded-md text-zinc-500 font-bold">
-                            {member.workspaceRole?.toUpperCase() || "CONTRIBUTOR"}
-                          </span>
-                        </div>
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      {(isPrivileged || isMe) && (
+                        <button
+                          onClick={() => startEditing(member)}
+                          className="px-2.5 py-1.5 bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
+                          title="Edit Teammate Schedule & Role"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
                       )}
-
-                      {/* ACTIONS */}
                       {isPrivileged && !isMe && (
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => startEditing(member)}
-                            className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
-                            title="Edit Permissions"
-                          >
-                            <Sliders className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => onRemoveMember(member.id)}
-                            className="p-1.5 text-zinc-400 hover:text-red-500 transition-colors"
-                            title="Remove Member"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => onRemoveMember(member.id)}
+                          className="p-1.5 text-zinc-400 hover:text-red-500 transition-colors cursor-pointer"
+                          title="Remove Member from Workspace"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       )}
                     </div>
                   </div>
@@ -318,6 +364,175 @@ export default function TeamView({
         </div>
 
       </div>
+
+      {/* TEAMMATE EDIT MODAL */}
+      <AnimatePresence>
+        {editingMember && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setEditingMember(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-md bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl p-6 overflow-hidden z-10"
+            >
+              <div className="flex items-center justify-between mb-4 border-b border-zinc-100 dark:border-zinc-800 pb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
+                    Edit Teammate
+                  </h3>
+                  <span className="text-[10px] text-zinc-400 font-mono block">
+                    Update location, working hours, and permissions
+                  </span>
+                </div>
+                <button
+                  onClick={() => setEditingMember(null)}
+                  className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveTeammate} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                    Display Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                  />
+                </div>
+
+                <div className="relative">
+                  <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                    City (Auto-resolves Timezone & Coordinates)
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editCity}
+                    onChange={(e) => handleCityChange(e.target.value)}
+                    placeholder="e.g. San Francisco, Tokyo, London"
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                  />
+                  {citySuggestions.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg z-20 overflow-hidden">
+                      {citySuggestions.map((c) => (
+                        <button
+                          key={`${c.name}-${c.countryCode}`}
+                          type="button"
+                          onClick={() => handleSelectCity(c)}
+                          className="w-full text-left px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-between text-xs cursor-pointer border-b border-zinc-100 dark:border-zinc-800/50 last:border-0"
+                        >
+                          <span className="font-bold text-zinc-800 dark:text-zinc-200">{c.name}, {c.country}</span>
+                          <span className="text-[10px] font-mono text-zinc-400">{c.timezone}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                      Work Start (Local)
+                    </label>
+                    <select
+                      value={editWorkStart}
+                      onChange={(e) => setEditWorkStart(parseInt(e.target.value, 10))}
+                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                    >
+                      {Array.from({ length: 24 }).map((_, i) => (
+                        <option key={i} value={i}>
+                          {String(i).padStart(2, "0")}:00
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                      Work End (Local)
+                    </label>
+                    <select
+                      value={editWorkEnd}
+                      onChange={(e) => setEditWorkEnd(parseInt(e.target.value, 10))}
+                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                    >
+                      {Array.from({ length: 24 }).map((_, i) => (
+                        <option key={i} value={i}>
+                          {String(i).padStart(2, "0")}:00
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {parseInt(editWorkStart, 10) > parseInt(editWorkEnd, 10) && (
+                  <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-2">
+                    <Moon className="w-3.5 h-3.5 shrink-0" />
+                    <span>Overnight shift detected ({String(editWorkStart).padStart(2, "0")}:00 to {String(editWorkEnd).padStart(2, "0")}:00 crosses midnight). Supported!</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                      Role
+                    </label>
+                    <select
+                      value={editRole}
+                      onChange={(e) => setEditRole(e.target.value)}
+                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                    >
+                      <option>Contributor</option>
+                      <option>Admin</option>
+                      <option>Owner</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                      Position Title
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Frontend Lead"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingMember(null)}
+                    className="flex-1 py-2 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 text-xs font-bold rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-2 bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-950 text-xs font-bold rounded-xl hover:opacity-90 transition-all cursor-pointer"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

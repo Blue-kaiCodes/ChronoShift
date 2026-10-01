@@ -65,6 +65,7 @@ export default function App() {
     togglePinCity,
     loginAsGuest,
     addTeammate,
+    updateTeammate,
     updateMemberHours
   } = store;
 
@@ -650,6 +651,7 @@ export default function App() {
                 onInvite={(email, role, title) => inviteMemberByEmail(email, role, title)}
                 onRemoveMember={(userId) => removeMember(userId)}
                 onUpdateRole={(userId, role, title) => updateMemberRoleAndTitle(userId, role, title)}
+                onUpdateTeammate={(userId, fields) => updateTeammate(userId, fields)}
               />
             )}
 
@@ -715,6 +717,8 @@ export default function App() {
         }}
         alignOptimal={alignOptimal}
         resetToToday={resetToToday}
+        adjustDate={adjustDate}
+        onNavigate={(v) => setActiveView(v)}
       />
 
       {/* CREATE WORKSPACE MODAL */}
