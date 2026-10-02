@@ -13,9 +13,12 @@ import {
   CheckCircle,
   HelpCircle,
   Clock,
-  Briefcase
+  Briefcase,
+  Moon,
+  Search,
+  Check
 } from "lucide-react";
-import { CITIES_DB } from "../lib/cities";
+import { CITIES_DB, searchCities, findCity } from "../lib/cities";
 import toast from "react-hot-toast";
 
 export default function SettingsView({
@@ -33,6 +36,9 @@ export default function SettingsView({
   const [username, setUsername] = useState(currentUser?.username || "");
   const [bio, setBio] = useState(currentUser?.bio || "");
   const [city, setCity] = useState(currentUser?.city || "New York");
+  const [citySearchQuery, setCitySearchQuery] = useState("");
+  const [citySuggestions, setCitySuggestions] = useState([]);
+  const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
   const [workStart, setWorkStart] = useState(currentUser?.workStart ?? 9);
   const [workEnd, setWorkEnd] = useState(currentUser?.workEnd ?? 17);
   const [clockFormat, setClockFormat] = useState(currentUser?.clockFormat || "12h");
@@ -46,17 +52,38 @@ export default function SettingsView({
   const [allowEmailNotifications, setAllowEmailNotifications] = useState(currentUser?.allowEmailNotifications ?? true);
   const [allowTeamInvites, setAllowTeamInvites] = useState(currentUser?.allowTeamInvites ?? true);
 
+  const handleCitySearch = (query) => {
+    setCitySearchQuery(query);
+    if (query.trim().length >= 2) {
+      setCitySuggestions(searchCities(query.trim(), 6));
+      setIsCityDropdownOpen(true);
+    } else {
+      setCitySuggestions([]);
+      setIsCityDropdownOpen(false);
+    }
+  };
+
+  const handleSelectCity = (cityObj) => {
+    setCity(cityObj.name);
+    setCitySearchQuery("");
+    setCitySuggestions([]);
+    setIsCityDropdownOpen(false);
+  };
+
   const handleProfileSave = (e) => {
     e.preventDefault();
-    const match = CITIES_DB.find(c => c.name === city);
+    const match = findCity(city) || CITIES_DB.find(c => c.name.toLowerCase() === city.toLowerCase()) || CITIES_DB[0];
     onUpdateProfile({
       fullName,
       displayName: fullName,
       username,
       bio,
-      city,
+      city: match ? match.name : city,
       country: match ? match.country : (currentUser?.country || "United States"),
+      countryCode: match ? match.countryCode : (currentUser?.countryCode || "US"),
       timezone: match ? match.timezone : (currentUser?.timezone || "America/New_York"),
+      lat: match ? match.lat : (currentUser?.lat || 40.7128),
+      lng: match ? match.lng : (currentUser?.lng || -74.006),
       workStart: parseInt(workStart),
       workEnd: parseInt(workEnd),
       clockFormat
@@ -180,19 +207,56 @@ export default function SettingsView({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">
-                    City
+                {/* City with searchable autocomplete */}
+                <div className="relative">
+                  <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 flex items-center justify-between">
+                    <span>City</span>
+                    {(() => {
+                      const match = findCity(city);
+                      return match ? (
+                        <span className="text-[10px] font-mono text-zinc-400">
+                          {match.countryCode} · {match.timezone.split("/").pop()}
+                        </span>
+                      ) : null;
+                    })()}
                   </label>
-                  <select
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200"
-                  >
-                    {CITIES_DB.map(c => (
-                      <option key={c.name} value={c.name}>{c.name}</option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={isCityDropdownOpen ? citySearchQuery : city}
+                      placeholder="Search city or code (e.g. NYC, London, Tokyo)..."
+                      onChange={(e) => handleCitySearch(e.target.value)}
+                      onFocus={() => {
+                        setCitySearchQuery("");
+                        setIsCityDropdownOpen(true);
+                        setCitySuggestions(searchCities(city, 6));
+                      }}
+                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
+                    />
+                    <Search className="w-3.5 h-3.5 text-zinc-400 absolute right-3 top-2.5 pointer-events-none" />
+                  </div>
+
+                  {/* Autocomplete Dropdown */}
+                  {isCityDropdownOpen && citySuggestions.length > 0 && (
+                    <div className="absolute z-30 mt-1 w-full bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+                      {citySuggestions.map((c) => (
+                        <button
+                          key={`${c.name}-${c.country}`}
+                          type="button"
+                          onClick={() => handleSelectCity(c)}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-900 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-900/60 last:border-b-0 cursor-pointer"
+                        >
+                          <div>
+                            <span className="font-semibold text-zinc-900 dark:text-zinc-100">{c.name}</span>
+                            <span className="text-[10px] text-zinc-400 ml-1.5">{c.country}</span>
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
+                            {c.timezone.split("/").pop()}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -202,7 +266,7 @@ export default function SettingsView({
                   <select
                     value={workStart}
                     onChange={(e) => setWorkStart(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200"
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200 cursor-pointer"
                   >
                     {Array.from({ length: 24 }).map((_, i) => (
                       <option key={i} value={i}>{String(i).padStart(2, "0")}:00</option>
@@ -217,7 +281,7 @@ export default function SettingsView({
                   <select
                     value={workEnd}
                     onChange={(e) => setWorkEnd(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200"
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200 cursor-pointer"
                   >
                     {Array.from({ length: 24 }).map((_, i) => (
                       <option key={i} value={i}>{String(i).padStart(2, "0")}:00</option>
@@ -225,6 +289,16 @@ export default function SettingsView({
                   </select>
                 </div>
               </div>
+
+              {/* Overnight shift indicator */}
+              {parseInt(workStart) > parseInt(workEnd) && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2 text-amber-700 dark:text-amber-400 text-xs">
+                  <Moon className="w-4 h-4 shrink-0" />
+                  <span>
+                    <strong>Overnight Schedule:</strong> Shift spans midnight ({String(workStart).padStart(2, "0")}:00 – {String(workEnd).padStart(2, "0")}:00 next day). Fully supported by ChronoShift calculation engine.
+                  </span>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">

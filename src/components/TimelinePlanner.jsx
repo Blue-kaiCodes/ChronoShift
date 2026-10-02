@@ -277,6 +277,16 @@ export default function TimelinePlanner({
     });
   }, [proposedMeetingTimeUTC, duration, isEmpty]);
 
+  const outlookCalendarUrl = useMemo(() => {
+    if (isEmpty || !proposedMeetingTimeUTC) return "";
+    return getOutlookCalendarUrl({
+      title: "Team Sync (ChronoShift)",
+      description: "Proposed timezone-synchronized team sync.",
+      startDate: proposedMeetingTimeUTC,
+      durationMinutes: duration
+    });
+  }, [proposedMeetingTimeUTC, duration, isEmpty]);
+
   const availableTimezones = useMemo(() => {
     const list = ["Europe/London", "America/New_York", "Asia/Tokyo", "Asia/Kolkata", "UTC"];
     members.forEach(m => {
@@ -845,7 +855,17 @@ export default function TimelinePlanner({
                   className="px-3.5 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-xs font-bold transition-all flex items-center gap-1.5 border border-zinc-200/40 dark:border-zinc-800"
                 >
                   <CalendarDays className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>Google Calendar</span>
+                  <span>Google</span>
+                </a>
+
+                <a
+                  href={outlookCalendarUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-xs font-bold transition-all flex items-center gap-1.5 border border-zinc-200/40 dark:border-zinc-800"
+                >
+                  <CalendarDays className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Outlook</span>
                 </a>
 
                 <button
